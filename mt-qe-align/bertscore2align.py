@@ -37,24 +37,45 @@ def sent_encode(tokenizer, sent):
         pieced_i = 0
         for orig_i, orig_token in enumerate(orig_tokens):
             tmp_token = pieced_tokens[pieced_i]
+
+            # normalize orig_token (lowercase, accent-norm. No punc-split-norm)
+            orig_token = tokenizer.basic_tokenizer._run_strip_accents(orig_token).lower()
+
             while True:
-                if len(tmp_token) > len(orig_token):
-                    raise ValueError('Maybe original tokens and pieced tokens does not match.')
                 mapping[pieced_i] = orig_i
                 pieced_i += 1
-                if tmp_token.lower() == orig_token.lower():
+                if tmp_token == orig_token:
                     break
                 else:
                     tmp_token += pieced_tokens[pieced_i].replace('##', '')
+
+                if len(tmp_token) > len(orig_token):
+                    msg = f'Original Text:  {" ".join(orig_tokens)}\n' \
+                          f'Pieced Text: {" ".join(pieced_tokens)}\n' \
+                          f'Original Token: {orig_token}\n' \
+                          f'Pieced Tmp Token: {tmp_token}\n' \
+                          f'Mapping: {mapping}'
+                    raise ValueError('Maybe original tokens and pieced tokens does not match.\n' + msg)
 
         return mapping
 
     if sent == "":
         return tokenizer.build_inputs_with_special_tokens([])
     else:
-        pieced_token_ids = tokenizer.encode(sent, add_special_tokens=True, max_length=tokenizer.max_len)
-        non_spt_pieced_token_ids = tokenizer.encode(sent, add_special_tokens=False, max_length=tokenizer.max_len)
-        pieced_tokens = [tokenizer.ids_to_tokens[i] for i in non_spt_pieced_token_ids]
+        pieced_token_ids = tokenizer.encode(sent, add_special_tokens=True)
+
+        # we need a tokenize method which do not add UNK but still do wordpiece tokenization
+        pieced_tokens = []
+        for token in tokenizer.basic_tokenizer.tokenize(sent, never_split=tokenizer.all_special_tokens):
+            wp_token = tokenizer.wordpiece_tokenizer.tokenize(token)
+            if '[UNK]' in wp_token:
+                assert len(wp_token) == 1, f'Token {token} is splited by wordpiece but still contains UNK??'
+                pieced_tokens.append(token)
+            else:
+                pieced_tokens.extend(wp_token)
+        assert len(pieced_tokens) + 2 == len(pieced_token_ids), 'Token list used for offset mapping does not match ' \
+                                                                'which is input into *BERT.'
+
         piece_offset_mapping = map_offset(sent.split(), pieced_tokens)
         return pieced_token_ids, piece_offset_mapping
 
@@ -110,7 +131,7 @@ def process_sim(sim, threshold):
         sim_matrix = sim[b, 1:, 1:]    # exclude CLS in both hyp and ref
 
         for i in range(longest_hyp_len - 2):    # 1 for CLS, 1 for SEP
-            if sim_matrix[i, :].sum() == 0:    # starting of all-PAD row
+            if sim_matrix[i + 1, :].sum() == 0:    # starting of all-PAD row
                 break
             for j in range(longest_ref_len - 2):
                 if sim_matrix[i, j + 1] == 0.0:    # PAD
@@ -129,11 +150,17 @@ def adapt_offset(align_lines, hyp_offset_mappings, ref_offset_mappings):
         hyp_offset_mapping = hyp_offset_mappings[i]
         ref_offset_mapping = ref_offset_mappings[i]
 
-        new_align_lines.append(
-            list(set(
-                (hyp_offset_mapping[x], ref_offset_mapping[y]) for x, y in align_line
-            ))
-        )
+        try:
+            new_align_lines.append(
+                list(set(
+                    (hyp_offset_mapping[x], ref_offset_mapping[y]) for x, y in align_line
+                ))
+            )
+        except Exception as e:
+            print(i, align_line)
+            print(hyp_offset_mapping)
+            print(ref_offset_mapping)
+            raise e
 
     return new_align_lines
 
@@ -143,7 +170,6 @@ def bert_score_to_align(hyps, refs, model_dir, batch_size, threshold):
 
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
     model = AutoModel.from_pretrained(model_dir)
-
     model.to('cuda')
 
     def dedup_and_sort(l):
@@ -160,17 +186,13 @@ def bert_score_to_align(hyps, refs, model_dir, batch_size, threshold):
         sen_batch_offset_mappings = [r[1] for r in sen_batch_res]
 
         padded_sens, lens, mask = padding(sen_batch_tokens, tokenizer.pad_token_id, dtype=torch.long)
-
-        # debug
-        # for padded_sen in padded_sens:
-        #     print(' '.join([tokenizer.ids_to_tokens[i.item()] for i in padded_sen]))
+        padded_sens = padded_sens.to('cuda')
+        mask = mask.to('cuda')
 
         with torch.no_grad():
             batch_embedding = bert_encode(
                 model, padded_sens, attention_mask=mask)
 
-        batch_embedding = batch_embedding.cuda()
-        mask = mask.cuda()
         for i, sen in enumerate(sen_batch):
             sequence_len = mask[i].sum().item()
             emb = batch_embedding[i, :sequence_len]
@@ -228,18 +250,23 @@ def main():
 
     args = parse_args()
 
-    with open(args.machine_translation, 'r') as f:
+    with open(args.machine_translation, 'r', encoding='utf-8') as f:
         mt_lines = [l.strip() for l in f]
 
-    with open(args.post_edit, 'r') as f:
+    with open(args.post_edit, 'r', encoding='utf-8') as f:
         pe_lines = [l.strip() for l in f]
 
-    align_lines = bert_score_to_align(mt_lines, pe_lines, args.model_dir, args.batch_size, args.threshold)
+    align_lines = bert_score_to_align(mt_lines, pe_lines, args.model_dir, args.batch_size, args.sim_threshold)
 
-    with open(args.output, 'w') as f:
+    with open(args.output, 'w', encoding='utf-8') as f:
         for align_line in align_lines:
-            align_line_str = ' '.join(f'{i}-{j}' if args.mt_to_pe else f'{j}-{i}' for i,j \
-                                      in sorted(align_line, key=lambda x:x[0] if args.mt_to_pe else lambda x:x[1])) + '\n'
+            if args.mt_to_pe:
+                key_func = lambda x:(x[0], x[1])
+            else:
+                key_func = lambda x:(x[1], x[0])
+
+            align_line_str = ' '.join([f'{i}-{j}' if args.mt_to_pe else f'{j}-{i}' for i,j \
+                                      in sorted(align_line, key=key_func)]) + '\n'
             f.write(align_line_str)
 
 
