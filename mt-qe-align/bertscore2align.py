@@ -14,7 +14,9 @@ NOTE = \
 import argparse
 import itertools
 import numpy as np
+import os
 import torch
+from pathlib import Path
 from transformers import AutoTokenizer, AutoModel
 from tqdm import tqdm
 from scipy.optimize import linear_sum_assignment
@@ -126,18 +128,69 @@ def greedy_cos_sim(ref_embedding, ref_masks, hyp_embedding, hyp_masks):
     return sim, masks  # (batch_size, longest(in_batch)_hyp_len, longest(in_batch)_ref_len)
 
 
-def process_sim(sim, masks, threshold, process_method=None):
+def generate_lp(sim_matrix, h_len, r_len, mask, wf_fn):
+    wf = wf_fn.open('w')
+
+    def printw(msg, **kwargs):
+        print(msg, file=wf, **kwargs)
+
+    vars = {}
+    for h, r in itertools.product(range(h_len), range(r_len)):
+        if mask[h, r]:
+            vars[f'{h}_{r}'] = sim_matrix[h, r]
+
+    printw('Maximize')
+    printw('obj:')
+    for var, val in vars.items():
+        printw(f'+ {val} x{var}')
+
+    printw('\nSubject to\n')
+
+    # for h in range(h_len):
+    #     printw(f'hyp_{h}')
+    #     for r in range(r_len):
+    #         var = f'{h}_{r}'
+    #         if var in vars.keys():
+    #             printw(f'1 + x{var}')
+    #     printw('= 1\n')
+
+    for r in range(r_len):
+        printw(f'ref_{r}')
+        for h in range(h_len):
+            var = f'{h}_{r}'
+            if var in vars.keys():
+                printw(f'1 + x{var}')
+        printw('<= 1\n')
+
+    printw('Binary')
+    for v in vars.keys():
+        printw(f'x{v}')
+    printw('End')
+
+    wf.close()
+
+
+def process_sim(sim, masks, args):
+    threshold = args.sim_threshold
+    process_method = args.sim_process_method
+
     batch_size = sim.size(0)
     align_lines = []
-    for b in range(batch_size):    # process sentence pairs one-by-one
-        align = []
-        sim_matrix = sim[b, 1:-1, 1:-1]    # exclude first row and col (CLS) and last row and col(SEP or PAD)
-        longest_hyp_len, longest_ref_len = sim_matrix.shape
 
+    for b in range(batch_size):  # process sentence pairs one-by-one
+        sim_matrix = sim[b, 1:-1, 1:-1]  # exclude first row and col (CLS) and last row and col(SEP or PAD)
+        longest_hyp_len, longest_ref_len = sim_matrix.shape
         mask = masks[b, 1:-1, 1:-1].type(torch.bool)
 
+        align = []
         if process_method is None:
             pass
+
+        elif process_method == 'create_lp':
+            assert os.path.isdir(args.output), f'output path [{args.output}] should be a directory if ' \
+                                               f'sim_process_method is specified to be create_lp'
+            wf_fn = Path(os.path.join(args.output, f'sent_{b}.lp'))
+            generate_lp(sim_matrix, longest_hyp_len, longest_ref_len, mask, wf_fn)
 
         elif process_method == 'hungarian':
             cost_matrix = torch.ones_like(sim_matrix)
@@ -161,8 +214,8 @@ def process_sim(sim, masks, threshold, process_method=None):
 
             neighbours = [
                 (-1, -1), (-1, 0), (-1, 1),
-                (0, -1),           (0, 1),
-                (1, -1),  (1, 0),  (1, 1)
+                (0, -1), (0, 1),
+                (1, -1), (1, 0), (1, 1)
             ]
 
             def _grow_diag():
@@ -174,7 +227,7 @@ def process_sim(sim, masks, threshold, process_method=None):
                         if hyp + nh < 0 or hyp + nh >= longest_hyp_len or ref + nr < 0 or ref + nr >= longest_ref_len:
                             continue
                         if (not align_matrix[hyp + nh, :].sum() > 0 or not align_matrix[:, ref + nr].sum() > 0) \
-                            and union_matrix[hyp+nh, ref+nr]:
+                                and union_matrix[hyp + nh, ref + nr]:
                             align_matrix[hyp + nh, ref + nr] = 1
                             point_added = True
 
@@ -184,7 +237,7 @@ def process_sim(sim, masks, threshold, process_method=None):
             def _final(matrix):
                 for hyp, ref in itertools.product(range(longest_hyp_len), range(longest_ref_len)):
                     if (not align_matrix[hyp, :].sum() > 0 or not align_matrix[:, ref].sum() > 1) \
-                        and matrix[hyp, ref]:
+                            and matrix[hyp, ref]:
                         align_matrix[hyp, ref] = 1
 
             _grow_diag()
@@ -199,10 +252,10 @@ def process_sim(sim, masks, threshold, process_method=None):
             raise ValueError(f'Invalid process method {process_method}')
 
         for i in range(longest_hyp_len):
-            if i + 1 >= longest_hyp_len or mask[i + 1, :].sum() == 0:    # PAD
+            if i + 1 >= longest_hyp_len or mask[i + 1, :].sum() == 0:  # PAD
                 break
             for j in range(longest_ref_len):
-                if j + 1 >= longest_ref_len or mask[i, j + 1] == 0:    # PAD
+                if j + 1 >= longest_ref_len or mask[i, j + 1] == 0:  # PAD
                     break
                 if sim_matrix[i, j] >= threshold:
                     align.append((i, j))
@@ -278,9 +331,9 @@ def bert_score_to_align(hyps, refs, args):
             ref_offset_mappings = [offset_mapping_dict[s] for s in batch_refs]
             hyp_offset_mappings = [offset_mapping_dict[s] for s in batch_hyps]
 
-            sim, masks= greedy_cos_sim(*ref_stats, *hyp_stats)
+            sim, masks = greedy_cos_sim(*ref_stats, *hyp_stats)
 
-            batch_align_lines = process_sim(sim, masks, args.sim_threshold, args.sim_process_method)
+            batch_align_lines = process_sim(sim, masks, args)
 
             batch_align_lines = adapt_offset(batch_align_lines, hyp_offset_mappings, ref_offset_mappings)
             align_lines.extend(batch_align_lines)
@@ -305,7 +358,8 @@ def parse_args():
                         help='Batch size when encoding sentences. DEFAULT: 64.')
     parser.add_argument('--sim-threshold', type=float, default=0.5,
                         help='Similarity score above which is regarded to be a possible alignment. DEFAULT: 0.5')
-    parser.add_argument('--sim-process-method', default=None, choices=['hungarian', 'grow-diag-final'],
+    parser.add_argument('--sim-process-method', default=None,
+                        choices=['hungarian', 'grow-diag-final', 'create_lp'],
                         help='Some process methods to filter out invalid alignments before filter them by threshold.')
     parser.add_argument('--mt-to-pe', action='store_true',
                         help='In default settings, output of this script is a PE-to-MT alignment file. If the '
@@ -317,7 +371,6 @@ def parse_args():
 
 
 def main():
-
     args = parse_args()
 
     with open(args.machine_translation, 'r', encoding='utf-8') as f:
@@ -328,16 +381,17 @@ def main():
 
     align_lines = bert_score_to_align(mt_lines, pe_lines, args)
 
-    with open(args.output, 'w', encoding='utf-8') as f:
-        for align_line in align_lines:
-            if args.mt_to_pe:
-                key_func = lambda x:(x[0], x[1])
-            else:
-                key_func = lambda x:(x[1], x[0])
+    if args.sim_process_method != 'create_lp':
+        with open(args.output, 'w', encoding='utf-8') as f:
+            for align_line in align_lines:
+                if args.mt_to_pe:
+                    key_func = lambda x: (x[0], x[1])
+                else:
+                    key_func = lambda x: (x[1], x[0])
 
-            align_line_str = ' '.join([f'{i}-{j}' if args.mt_to_pe else f'{j}-{i}' for i,j \
-                                      in sorted(align_line, key=key_func)]) + '\n'
-            f.write(align_line_str)
+                align_line_str = ' '.join([f'{i}-{j}' if args.mt_to_pe else f'{j}-{i}' for i, j \
+                                           in sorted(align_line, key=key_func)]) + '\n'
+                f.write(align_line_str)
 
 
 if __name__ == '__main__':
