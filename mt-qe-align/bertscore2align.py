@@ -2,14 +2,14 @@
 # -*- coding:utf-8 -*-
 
 NOTE = \
-'''
-    Generating alignments for every pair of sentences in the given MT&PE corpus files, using *BERT's representation.
-    The BERT model is expected to be prepared in advance in model-dir, specifically: config.json, vocab.txt and 
-    pytorch_model.bin are expected.
-    
-    In particular, cosine similarity is calculated and only pair of words whose cosine similarity is above a
-    specified threshold will be extracted as an aligned match.
-'''
+    '''
+        Generating alignments for every pair of sentences in the given MT&PE corpus files, using *BERT's representation.
+        The BERT model is expected to be prepared in advance in model-dir, specifically: config.json, vocab.txt and 
+        pytorch_model.bin are expected.
+        
+        In particular, cosine similarity is calculated and only pair of words whose cosine similarity is above a
+        specified threshold will be extracted as an aligned match.
+    '''
 
 import argparse
 import itertools
@@ -137,8 +137,12 @@ def generate_lp(sim_matrix, h_len, r_len, mask, wf_fn):
         print(msg, file=wf, **kwargs)
 
     vars = {}
-    for h, r in itertools.product(range(h_len), range(r_len)):
-        if mask[h, r]:
+    for h in range(h_len):
+        if h + 1 >= h_len or mask[h + 1, :].sum() == 0:
+            break
+        for r in range(r_len):
+            if r + 1 >= r_len or mask[h, r + 1] == 0:
+                break
             vars[f'{h}_{r}'] = sim_matrix[h, r]
 
     printw('Maximize')
@@ -171,8 +175,9 @@ def generate_lp(sim_matrix, h_len, r_len, mask, wf_fn):
 
     wf.close()
 
+
 def cplex_stdout_analyze(output):
-    for l in output.split('\n'):
+    for l in output.decode('utf-8').split('\n'):
         m = re.match('^x(.+?)\s+1\.0+$', l.strip())
         if m is not None:
             yield m.group(1)
@@ -202,6 +207,7 @@ def cplex_analyze(batch_size, align_lines, args):
             aligns.append((i, j))
 
         align_lines.append(aligns)
+
 
 def process_sim(sim, masks, args):
     threshold = args.sim_threshold
@@ -306,8 +312,6 @@ def process_sim(sim, masks, args):
         cplex_analyze(batch_size, align_lines, args)
 
     return align_lines
-
-
 
 
 def adapt_offset(align_lines, hyp_offset_mappings, ref_offset_mappings):
