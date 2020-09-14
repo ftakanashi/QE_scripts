@@ -1,0 +1,1 @@
+Der Schärfen-Werkezug Bereiche in einem Bild schärfer erscheint .
