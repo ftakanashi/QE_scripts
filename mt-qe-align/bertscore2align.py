@@ -288,8 +288,8 @@ def process_sim(sim, masks, args):
 
         # collecting aligned results
         if process_method == 'create_lp':
-            cplex_analyze(batch_size, align_lines, args)
-
+            # collecting work will be done outside the loop
+            pass
         else:
             for i in range(longest_hyp_len):
                 if i + 1 >= longest_hyp_len or mask[i + 1, :].sum() == 0:  # PAD
@@ -302,7 +302,12 @@ def process_sim(sim, masks, args):
 
             align_lines.append(align)
 
+    if process_method == 'create_lp':
+        cplex_analyze(batch_size, align_lines, args)
+
     return align_lines
+
+
 
 
 def adapt_offset(align_lines, hyp_offset_mappings, ref_offset_mappings):
