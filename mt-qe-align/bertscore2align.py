@@ -15,6 +15,8 @@ import argparse
 import itertools
 import numpy as np
 import os
+import re
+import subprocess
 import torch
 from pathlib import Path
 from transformers import AutoTokenizer, AutoModel
@@ -159,7 +161,7 @@ def generate_lp(sim_matrix, h_len, r_len, mask, wf_fn):
         for h in range(h_len):
             var = f'{h}_{r}'
             if var in vars.keys():
-                printw(f'1 + x{var}')
+                printw(f'+ 1 x{var}')
         printw('<= 1\n')
 
     printw('Binary')
@@ -169,6 +171,37 @@ def generate_lp(sim_matrix, h_len, r_len, mask, wf_fn):
 
     wf.close()
 
+def cplex_stdout_analyze(output):
+    for l in output.split('\n'):
+        m = re.match('^x(.+?)\s+1\.0+$', l.strip())
+        if m is not None:
+            yield m.group(1)
+
+
+def cplex_analyze(batch_size, align_lines, args):
+    cplex_bin = '/nfs/gshare/optimizer_nishino/CPLEX_Studio128/cplex/bin/x86-64_linux/cplex'
+    tmp_dir = args.tmp_working_dir
+
+    def run_cmd(cmd):
+        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = p.communicate()
+        if err:
+            raise RuntimeError(f'Error Occured When Running CMD [{cmd}]:\n{err}')
+        else:
+            return out
+
+    for b in tqdm(range(batch_size), mininterval=0.5, ncols=100, desc='Processed Sentences'):
+        lp_fn = os.path.join(tmp_dir, f'sent_{b}.lp')
+        assert os.path.isfile(lp_fn), f'{lp_fn} is not generated yet.'
+
+        # todo bet an API for CPLEX in Python is better fitted
+        output = run_cmd(f'{cplex_bin} -c "read {lp_fn}" "optimize" "display solution variables x*"')
+        aligns = []
+        for a in cplex_stdout_analyze(output):
+            i, j = map(int, a.split('_'))
+            aligns.append((i, j))
+
+        align_lines.append(aligns)
 
 def process_sim(sim, masks, args):
     threshold = args.sim_threshold
@@ -187,9 +220,11 @@ def process_sim(sim, masks, args):
             pass
 
         elif process_method == 'create_lp':
-            assert os.path.isdir(args.output), f'output path [{args.output}] should be a directory if ' \
-                                               f'sim_process_method is specified to be create_lp'
-            wf_fn = Path(os.path.join(args.output, f'sent_{b}.lp'))
+            # firstly prepare all the .lp files
+            # running of CPLEX will be performed out of the loop
+            assert os.path.isdir(args.tmp_working_dir), f'output path [{args.tmp_working_dir}] should be a directory ' \
+                                                        f'if sim_process_method is specified to be create_lp'
+            wf_fn = Path(os.path.join(args.tmp_working_dir, f'sent_{b}.lp'))
             generate_lp(sim_matrix, longest_hyp_len, longest_ref_len, mask, wf_fn)
 
         elif process_method == 'hungarian':
@@ -251,16 +286,21 @@ def process_sim(sim, masks, args):
         else:
             raise ValueError(f'Invalid process method {process_method}')
 
-        for i in range(longest_hyp_len):
-            if i + 1 >= longest_hyp_len or mask[i + 1, :].sum() == 0:  # PAD
-                break
-            for j in range(longest_ref_len):
-                if j + 1 >= longest_ref_len or mask[i, j + 1] == 0:  # PAD
-                    break
-                if sim_matrix[i, j] >= threshold:
-                    align.append((i, j))
+        # collecting aligned results
+        if process_method == 'create_lp':
+            cplex_analyze(batch_size, align_lines, args)
 
-        align_lines.append(align)
+        else:
+            for i in range(longest_hyp_len):
+                if i + 1 >= longest_hyp_len or mask[i + 1, :].sum() == 0:  # PAD
+                    break
+                for j in range(longest_ref_len):
+                    if j + 1 >= longest_ref_len or mask[i, j + 1] == 0:  # PAD
+                        break
+                    if sim_matrix[i, j] >= threshold:
+                        align.append((i, j))
+
+            align_lines.append(align)
 
     return align_lines
 
@@ -353,6 +393,8 @@ def parse_args():
                              '*BERT model are saved.')
     parser.add_argument('-o', '--output',
                         help='Path to the output file.')
+    parser.add_argument('--tmp-working-dir', default=None,
+                        help='A temporary working dir for saving related files. Like .lp and .batch for CPLEX.')
 
     parser.add_argument('--batch-size', type=int, default=64,
                         help='Batch size when encoding sentences. DEFAULT: 64.')
@@ -381,17 +423,16 @@ def main():
 
     align_lines = bert_score_to_align(mt_lines, pe_lines, args)
 
-    if args.sim_process_method != 'create_lp':
-        with open(args.output, 'w', encoding='utf-8') as f:
-            for align_line in align_lines:
-                if args.mt_to_pe:
-                    key_func = lambda x: (x[0], x[1])
-                else:
-                    key_func = lambda x: (x[1], x[0])
+    with open(args.output, 'w', encoding='utf-8') as f:
+        for align_line in align_lines:
+            if args.mt_to_pe:
+                key_func = lambda x: (x[0], x[1])
+            else:
+                key_func = lambda x: (x[1], x[0])
 
-                align_line_str = ' '.join([f'{i}-{j}' if args.mt_to_pe else f'{j}-{i}' for i, j \
-                                           in sorted(align_line, key=key_func)]) + '\n'
-                f.write(align_line_str)
+            align_line_str = ' '.join([f'{i}-{j}' if args.mt_to_pe else f'{j}-{i}' for i, j \
+                                       in sorted(align_line, key=key_func)]) + '\n'
+            f.write(align_line_str)
 
 
 if __name__ == '__main__':
