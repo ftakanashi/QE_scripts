@@ -131,7 +131,8 @@ def optimize_and_analyze(sent_infos, args):
                 aligns.extend([(i, word_id) for i in range(s, e + 1)])
             else:
                 raise ValueError(f'Invalid direction {direc}')
-
+            
+        aligns = list(set(aligns))
         align_lines.append(sorted(aligns, key=lambda x: x[0]))
 
     return align_lines
