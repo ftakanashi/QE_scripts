@@ -225,6 +225,13 @@ def process_sim(sim, masks, args):
         if process_method is None:
             pass
 
+        if process_method == 'ref_argmax':
+            arg_indices = sim_matrix.argmax(dim=-1)
+            arg_mask = torch.ones_like(sim_matrix)
+            for i, j in enumerate(arg_indices):
+                arg_mask[i, j] = 0
+            sim_matrix.masked_fill_(arg_mask.type(torch.bool), -float('inf'))
+
         elif process_method == 'create_lp':
             # firstly prepare all the .lp files
             # running of CPLEX will be performed out of the loop
@@ -410,7 +417,7 @@ def parse_args():
     parser.add_argument('--sim-threshold', type=float, default=0.5,
                         help='Similarity score above which is regarded to be a possible alignment. DEFAULT: 0.5')
     parser.add_argument('--sim-process-method', default=None,
-                        choices=['hungarian', 'grow-diag-final', 'create_lp'],
+                        choices=['hungarian', 'grow-diag-final', 'create_lp', 'ref_argmax'],
                         help='Some process methods to filter out invalid alignments before filter them by threshold.')
     parser.add_argument('--mt-to-pe', action='store_true',
                         help='In default settings, output of this script is a PE-to-MT alignment file. If the '
