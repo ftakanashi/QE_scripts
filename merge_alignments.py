@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument('-o', '--output', type=Path,
                         help='Path to the output file.')
 
-    parser.add_argument('--possible-delimeter', nargs='+', default=['-', 'p'],
+    parser.add_argument('--possible-delimeters', nargs='+', default=['-', 'p'],
                         help='Options of delimeters used in alignment files. DEFAULT: [-, p]')
 
     args = parser.parse_args()
