@@ -56,6 +56,7 @@ def process_sp_pm_pair(sp_line, pm_line, args):
         for m in pm_map[p]:
             res.append((s, m))
 
+    res = list(set(res))
     return res
 
 
