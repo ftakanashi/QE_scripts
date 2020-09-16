@@ -38,6 +38,11 @@ def parse_args():
 
 
 def generate_sent_lps(sent_infos, args):
+    if not os.path.exists(args.tmp_working_dir):
+        os.makedirs(args.tmp_working_dir)
+    elif not os.path.isdir(args.tmp_working_dir):
+        raise ValueError(f'tmp working directory {args.tmp_working_dir} is not a valid dir.')
+
     for sent_id, sent_info in tqdm(sent_infos.items(), mininterval=0.5, ncols=100, desc='generating .lp for each '
                                                                                         'sentence pair'):
         wf = Path(os.path.join(args.tmp_working_dir, f'sent_{sent_id}.lp')).open('w')
