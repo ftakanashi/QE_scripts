@@ -57,6 +57,8 @@ def generate_sent_lps(sent_infos, args):
                     val = prob
                 else:
                     val = 1 - prob
+                    s, e = map(int, (s, e))
+                    val *= (e - s + 2) / 2
 
                 printw(f'+ {val} x{var}')
 
@@ -131,9 +133,9 @@ def optimize_and_analyze(sent_infos, args):
                 aligns.extend([(i, word_id) for i in range(s, e + 1)])
             else:
                 raise ValueError(f'Invalid direction {direc}')
-            
+
         aligns = list(set(aligns))
-        align_lines.append(sorted(aligns, key=lambda x: x[0]))
+        align_lines.append(sorted(aligns))
 
     return align_lines
 
