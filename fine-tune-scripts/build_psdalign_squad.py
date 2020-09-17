@@ -80,12 +80,17 @@ def make_aug_src(src_tokens, query_i):
 
 def process_one_pair(src_line, src_qe_tags_line, tgt_line,
                      tgt_qe_tags_line, s2t_align, t2s_align, pair_id, opt):
+
     src_tokens = src_line.split()
     src_qe_tags = src_qe_tags_line.split()
-    assert len(src_tokens) == len(src_qe_tags), f'Inconsistent QE tags {src_qe_tags} with corpus {src_tokens}'
+    if src_qe_tags_line != '':
+        assert len(src_tokens) == len(src_qe_tags), f'Inconsistent QE tags {src_qe_tags} with corpus {src_tokens}'
+
     tgt_tokens = tgt_line.split()
     tgt_qe_tags = tgt_qe_tags_line.split()[1::2]
-    assert len(tgt_tokens) == len(tgt_qe_tags), f'Inconsistent QE tags {tgt_qe_tags} with corpus {tgt_tokens}'
+    if tgt_qe_tags_line != '':
+        assert len(tgt_tokens) == len(tgt_qe_tags), f'Inconsistent QE tags {tgt_qe_tags} with corpus {tgt_tokens}'
+
     s2t_context = tgt_line
     t2s_context = src_line
 
@@ -101,7 +106,7 @@ def process_one_pair(src_line, src_qe_tags_line, tgt_line,
             aug = make_aug_src(from_tokens, i)  # insert special tokens to pack a source token
             to_span = align[i]  # a list of target tokens ids which are aligned to the source token. May be an empty
             # one.
-            from_qe_tag = from_qe_tags[i]
+            from_qe_tag = from_qe_tags[i] if len(from_qe_tags) > 0 else None
             if len(to_span) == 0:
                 # if there is no answer
                 if random.random() < null_dropout:
@@ -208,14 +213,20 @@ def process(opt):
     with open(opt.src, 'r') as f:
         src_lines = [l.strip() for l in f]
 
-    with open(opt.src_qe_tags, 'r') as f:
-        src_qe_tags_lines = [l.strip() for l in f]
+    if opt.src_qe_tags is not None:
+        with open(opt.src_qe_tags, 'r') as f:
+            src_qe_tags_lines = [l.strip() for l in f]
+    else:
+        src_qe_tags_lines = ['' for _ in range(len(src_lines))]
 
     with open(opt.tgt, 'r') as f:
         tgt_lines = [l.strip() for l in f]
 
-    with open(opt.tgt_qe_tags, 'r') as f:
-        tgt_qe_tags_lines = [l.strip() for l in f]
+    if opt.tgt_qe_tags is not None:
+        with open(opt.tgt_qe_tags, 'r') as f:
+            tgt_qe_tags_lines = [l.strip() for l in f]
+    else:
+        tgt_qe_tags_lines = ['' for _ in range(len(tgt_lines))]
 
     if opt.align is not None:
         with open(opt.align, 'r') as f:
@@ -304,9 +315,10 @@ def main():
     parser.add_argument('-a', '--align', default=None,
                         help='If set to None, it means that the data might be test data without golden tags.')
     parser.add_argument('-o', '--output', required=True)
-    parser.add_argument('--src-qe-tags', required=True,
+
+    parser.add_argument('--src-qe-tags', default=None,
                         help='Path to the source QE tags.')
-    parser.add_argument('--tgt-qe-tags', required=True,
+    parser.add_argument('--tgt-qe-tags', default=None,
                         help='Path to the target QE tags.')
 
     parser.add_argument('--only-sure', action='store_true', default=False)
