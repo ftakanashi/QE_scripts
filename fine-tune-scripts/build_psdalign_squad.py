@@ -82,10 +82,10 @@ def process_one_pair(src_line, src_qe_tags_line, tgt_line,
                      tgt_qe_tags_line, s2t_align, t2s_align, pair_id, opt):
     src_tokens = src_line.split()
     src_qe_tags = src_qe_tags_line.split()
-    assert len(src_tokens) == len(src_qe_tags), 'Inconsistent QE tags with corpus'
+    assert len(src_tokens) == len(src_qe_tags), f'Inconsistent QE tags {src_qe_tags} with corpus {src_tokens}'
     tgt_tokens = tgt_line.split()
-    tgt_qe_tags = tgt_qe_tags_line.split()
-    assert len(tgt_tokens) == len(tgt_qe_tags), 'Inconsistent QE tags with corpus'
+    tgt_qe_tags = tgt_qe_tags_line.split()[1::2]
+    assert len(tgt_tokens) == len(tgt_qe_tags), f'Inconsistent QE tags {tgt_qe_tags} with corpus {tgt_tokens}'
     s2t_context = tgt_line
     t2s_context = src_line
 
@@ -208,13 +208,13 @@ def process(opt):
     with open(opt.src, 'r') as f:
         src_lines = [l.strip() for l in f]
 
-    with open(opt.src_qt_tags, 'r') as f:
+    with open(opt.src_qe_tags, 'r') as f:
         src_qe_tags_lines = [l.strip() for l in f]
 
     with open(opt.tgt, 'r') as f:
         tgt_lines = [l.strip() for l in f]
 
-    with open(opt.tgt_qe_tags_lines, 'r') as f:
+    with open(opt.tgt_qe_tags, 'r') as f:
         tgt_qe_tags_lines = [l.strip() for l in f]
 
     if opt.align is not None:
@@ -235,10 +235,12 @@ def process(opt):
     for i, src_line in enumerate(src_lines):
         tgt_line = tgt_lines[i]
         s2t_align = s2t_aligns[i]
+        src_qe_tags_line = src_qe_tags_lines[i]
         t2s_align = t2s_aligns[i]
+        tgt_qe_tags_line = tgt_qe_tags_lines[i]
         if opt.do_t2s:
             s2t_one_pair_res_para, t2s_one_pair_res_para, p_c, imp_c = \
-                process_one_pair(src_line, tgt_line, s2t_align, t2s_align, i, opt)
+                process_one_pair(src_line, src_qe_tags_line, tgt_line, tgt_qe_tags_line, s2t_align, t2s_align, i, opt)
 
             s2t_data = {'paragraphs': [s2t_one_pair_res_para, ]}
             t2s_data = {'paragraphs': [t2s_one_pair_res_para, ]}
@@ -251,6 +253,7 @@ def process(opt):
             data.append(s2t_data)
             data.append(t2s_data)
         else:
+            assert opt.do_t2s, 'Please add do-t2s option. The following code needs maintainance...'
             one_pair_res_para, p_c, imp_c = process_one_pair(src_line, tgt_line, s2t_align, t2s_align, i, opt)
             data.append({'paragraphs': [one_pair_res_para, ]})
 
@@ -303,7 +306,7 @@ def main():
     parser.add_argument('-o', '--output', required=True)
     parser.add_argument('--src-qe-tags', required=True,
                         help='Path to the source QE tags.')
-    parser.add_argument('--tgt-pe-tags', required=True,
+    parser.add_argument('--tgt-qe-tags', required=True,
                         help='Path to the target QE tags.')
 
     parser.add_argument('--only-sure', action='store_true', default=False)
