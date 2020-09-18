@@ -1,16 +1,20 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
+NOTE = \
 '''
-Nagata san's paper: https://arxiv.org/pdf/2004.14516.pdf
-Input:
-  - source corpus
-  - target corpus
-  - golden alignment label
-Work:
-  build a SQuAD like and JSON-format data file in which each source **token**
-  (currently source span is not considered) annotated in alignment file
-  will be marked and the answer set to be the corresponding target tokens according to the alignment.
+    @author: f.takanashi
+    A script modified from build_squad.py
+    Main difference is that this script support input of QE tags which contains only OK or BAD tags for each word in 
+    source and target corpus.
+    Note that in default settings, target(MT) tags contains those corresponding to GAP. So we extract target tags
+    [1::2] ones as results.
+    
+    Every QE tag will be added into the squad body following key "question".
+    Value of which is "OK" or "BAD".
+    Also note that when generating squad json file for testing purpose, QE tags files may not exist.
+    In that case, you dont need to specify it and leave it as the default value None.
+    When QE tag files are None, a "qe_tag": null K-V pair will be added into the squad json file.
 '''
 
 import argparse
@@ -296,19 +300,7 @@ def process(opt):
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        '''
-            Nagata san's paper: https://arxiv.org/pdf/2004.14516.pdf
-            Input:
-              - source corpus
-              - target corpus
-              - golden alignment label
-            Work:
-              build a SQuAD like and JSON-format data file in which each source **token**
-              (currently source span is not considered) annotated in alignment file
-              will be marked and the answer set to be the corresponding target tokens according to the alignment.
-        '''
-    )
+    parser = argparse.ArgumentParser(NOTE)
 
     parser.add_argument('-s', '--src', required=True)
     parser.add_argument('-t', '--tgt', required=True)
