@@ -54,7 +54,9 @@ def process_one_pair(src_line, mt_line, src_qe_tags_line, mt_qe_tags_line, align
 
 
     ###############################
+    #
     # Core: rules for judging
+    #
     ###############################
     # first GAP
     if 0 in mt2src_align[0] or mt_qe_tags[0] == 'OK':
@@ -87,6 +89,12 @@ def process_one_pair(src_line, mt_line, src_qe_tags_line, mt_qe_tags_line, align
         gap_qe_tags.append('OK')
     else:
         gap_qe_tags.append('BAD')
+
+    ###############################
+    #
+    # End of rules.
+    #
+    ###############################
 
     # merge the word tags and the gap tags
     extended_mt_qe_tags = []
