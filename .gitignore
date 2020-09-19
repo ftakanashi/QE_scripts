@@ -4,3 +4,4 @@ mt-qe-align/model
 mt-qe-align/tmp*
 cplex-scripts/tmp*
 tmp*
+runs

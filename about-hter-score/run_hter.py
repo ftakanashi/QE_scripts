@@ -284,7 +284,15 @@ class BertModelWithQETag(BertPreTrainedModel):
         self.encoder = BertEncoder(config)
         self.pooler = BertPooler(config)
 
-        self.qe_tag_embeddings = nn.Embedding(2, config.hidden_size)
+        if config.tag_incorporate_mode == 'add':
+            self.qe_tag_embeddings = nn.Embedding(2, config.hidden_size)
+        elif config.tag_incorporate_mode == 'concat':
+            # by default, the dimension of tag embedding is 4.
+            self.word_embeddings_extra = nn.Linear(config.hidden_size, config.hidden_size - 4)
+            self.qe_tag_embeddings = nn.Embedding(2, 4)
+        else:
+            raise ValueError(f'Invalid tag_incorporate_mode {config.tag_incorporate_mode}')
+
 
         self.init_weights()
 
@@ -342,9 +350,15 @@ class BertModelWithQETag(BertPreTrainedModel):
             input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids, inputs_embeds=inputs_embeds
         )
 
-        qe_tag_embedding_output = self.qe_tag_embeddings(input_tag_ids)
-
-        embedding_output = embedding_output + qe_tag_embedding_output  # todo concat method
+        if hasattr(self, 'word_embeddings_extra'):
+            # concat
+            embedding_output = self.word_embeddings_extra(embedding_output)
+            qe_tag_embedding_output = self.qe_tag_embeddings(input_tag_ids)
+            embedding_output = torch.cat((embedding_output, qe_tag_embedding_output), dim=-1)
+        else:
+            # add
+            qe_tag_embedding_output = self.qe_tag_embeddings(input_tag_ids)
+            embedding_output = embedding_output + qe_tag_embedding_output
 
         encoder_outputs = self.encoder(
             embedding_output,
@@ -442,6 +456,9 @@ class BertModelWithQETagForSequenceClassification(BertPreTrainedModel):
 
 @dataclass
 class ModelArguments:
+    model_type: str = field(
+        metadata={"help": "Type of model"}
+    )
     model_name_or_path: str = field(
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
@@ -453,6 +470,13 @@ class ModelArguments:
     )
     cache_dir: Optional[str] = field(
         default=None, metadata={"help": "Where do you want to store the pretrained models downloaded from s3"}
+    )
+    tag_incorporate_mode: Optional[str] = field(
+        default='add',
+        metadata={
+            'help': 'The way the model to incorporate QE tag representation.',
+            'choices': ['add', 'concat']
+        }
     )
 
 
@@ -489,10 +513,13 @@ def main():
         # finetuning_task=data_args.task_name,
         cache_dir=model_args.cache_dir,
     )
+    config.tag_incorporate_mode = model_args.tag_incorporate_mode
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
     )
+
     model = BertModelWithQETagForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
         config=config,
