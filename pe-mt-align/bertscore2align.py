@@ -416,7 +416,8 @@ def parse_args():
     parser.add_argument('--batch-size', type=int, default=64,
                         help='Batch size when encoding sentences. DEFAULT: 64.')
     parser.add_argument('--sim-threshold', type=float, default=0.5,
-                        help='Similarity score above which is regarded to be a possible alignment. DEFAULT: 0.5')
+                        help='Similarity score above which is regarded to be a possible alignment. DEFAULT: 0.5. '
+                             'Note. not activated when sim_process_method is ilp.')
     parser.add_argument('--sim-process-method', default=None,
                         choices=['hungarian', 'grow-diag-final', 'ilp', 'ref_argmax'],
                         help='Some process methods to filter out invalid alignments before filter them by threshold.')
@@ -424,7 +425,8 @@ def parse_args():
                         help='In default settings, output of this script is a PE-to-MT alignment file. If the '
                              'opposite alignment is wanted, then add this option.')
     parser.add_argument('--cplex-bin', default='/opt/ibm/cplex',
-                        help='Path to the cplex binary file. Only used when sim_process_method is ilp.')
+                        help='Path to the cplex binary file. Only used when sim_process_method is ilp. DEFAULT: '
+                             '/opt/ibm/cplex')
 
     args = parser.parse_args()
 
