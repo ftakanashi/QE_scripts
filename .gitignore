@@ -1,7 +1,7 @@
 .idea
-mt-qe-align/WMT20
-mt-qe-align/model
-mt-qe-align/tmp*
+pe-mt-align/WMT20
+pe-mt-align/model
+pe-mt-align/tmp*
 cplex-scripts/tmp*
 tmp*
 runs

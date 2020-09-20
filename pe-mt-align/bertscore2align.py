@@ -184,7 +184,8 @@ def cplex_stdout_analyze(output):
 
 
 def cplex_analyze(batch_size, align_lines, args):
-    cplex_bin = '/nfs/gshare/optimizer_nishino/CPLEX_Studio128/cplex/bin/x86-64_linux/cplex'
+    # cplex_bin = '/nfs/gshare/optimizer_nishino/CPLEX_Studio128/cplex/bin/x86-64_linux/cplex'
+    cplex_bin = args.cplex_bin
     tmp_dir = args.tmp_working_dir
 
     def run_cmd(cmd):
@@ -232,11 +233,11 @@ def process_sim(sim, masks, args):
                 arg_mask[i, j] = 0
             sim_matrix.masked_fill_(arg_mask.type(torch.bool), -float('inf'))
 
-        elif process_method == 'create_lp':
+        elif process_method == 'ilp':
             # firstly prepare all the .lp files
             # running of CPLEX will be performed out of the loop
             assert os.path.isdir(args.tmp_working_dir), f'output path [{args.tmp_working_dir}] should be a directory ' \
-                                                        f'if sim_process_method is specified to be create_lp'
+                                                        f'if sim_process_method is specified to be ilp'
             wf_fn = Path(os.path.join(args.tmp_working_dir, f'sent_{b}.lp'))
             generate_lp(sim_matrix, longest_hyp_len, longest_ref_len, mask, wf_fn)
 
@@ -300,7 +301,7 @@ def process_sim(sim, masks, args):
             raise ValueError(f'Invalid process method {process_method}')
 
         # collecting aligned results
-        if process_method == 'create_lp':
+        if process_method == 'ilp':
             # collecting work will be done outside the loop
             pass
         else:
@@ -315,7 +316,7 @@ def process_sim(sim, masks, args):
 
             align_lines.append(align)
 
-    if process_method == 'create_lp':
+    if process_method == 'ilp':
         cplex_analyze(batch_size, align_lines, args)
 
     return align_lines
@@ -417,11 +418,13 @@ def parse_args():
     parser.add_argument('--sim-threshold', type=float, default=0.5,
                         help='Similarity score above which is regarded to be a possible alignment. DEFAULT: 0.5')
     parser.add_argument('--sim-process-method', default=None,
-                        choices=['hungarian', 'grow-diag-final', 'create_lp', 'ref_argmax'],
+                        choices=['hungarian', 'grow-diag-final', 'ilp', 'ref_argmax'],
                         help='Some process methods to filter out invalid alignments before filter them by threshold.')
     parser.add_argument('--mt-to-pe', action='store_true',
                         help='In default settings, output of this script is a PE-to-MT alignment file. If the '
                              'opposite alignment is wanted, then add this option.')
+    parser.add_argument('--cplex-bin', default='/opt/ibm/cplex',
+                        help='Path to the cplex binary file. Only used when sim_process_method is ilp.')
 
     args = parser.parse_args()
 
