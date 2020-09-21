@@ -583,9 +583,11 @@ def main():
         if trainer.is_world_master():
             with open(output_test_file, "w") as writer:
                 logger.info("***** Test results HTER Scores *****")
-                writer.write("index\tprediction\n")
+                # writer.write("index\tprediction\n")
+                # for index, item in enumerate(predictions):
+                #     writer.write("%d\t%3.3f\n" % (index, item))
                 for index, item in enumerate(predictions):
-                    writer.write("%d\t%3.3f\n" % (index, item))
+                    writer.write(f'{item}\n')
 
 
 if __name__ == "__main__":
