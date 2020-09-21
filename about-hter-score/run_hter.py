@@ -587,7 +587,7 @@ def main():
                 # for index, item in enumerate(predictions):
                 #     writer.write("%d\t%3.3f\n" % (index, item))
                 for index, item in enumerate(predictions):
-                    writer.write(f'{item}\n')
+                    writer.write(f'{item[0]}\n')
 
 
 if __name__ == "__main__":
