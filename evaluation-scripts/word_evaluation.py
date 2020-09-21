@@ -59,25 +59,25 @@ def parse_args():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--ref-dir')
-    parser.add_argument('--pred-dir')
+    parser.add_argument('--ref-source-tags', type=Path)
+    parser.add_argument('--ref-tags', type=Path)
+    parser.add_argument('--ref-gap-tags', type=Path, default=None)
+
+    parser.add_argument('--pred-source-tags', type=Path)
+    parser.add_argument('--pred-tags', type=Path)
+    parser.add_argument('--pred-gap-tags', type=Path)
+
     parser.add_argument('--evaluate-merged-mt', action='store_true',
                         help='If this option is added, then MT word tags and gap tags will be evaluated together.')
 
     args = parser.parse_args()
 
+    assert (args.ref_gaps_tags is not None and args.pred_gaps_tags is not None) or (args.evaluate_merged_mt)
+
     return args
 
 def main():
     args = parse_args()
-
-    source_tag_fn = 'source.tags'
-    if not args.evaluate_merged_mt:
-        mt_tag_fn = 'mt_word.tags'
-        gap_tag_fn = 'mt_gap.tags'
-    else:
-        mt_tag_fn = 'merged_mt.tags'
-        gap_tag_fn = None
 
     TAG_MAP = {
         'OK': 1,
@@ -88,12 +88,10 @@ def main():
         with Path(fn).open() as f:
             return [[TAG_MAP[t] for t in l.strip().split()] for l in f]
 
-    join = os.path.join
-
 
     # Source
-    ref_source_tags = read_tag(join(args.ref_dir, source_tag_fn))
-    pred_source_tags = read_tag(join(args.pred_dir, source_tag_fn))
+    ref_source_tags = read_tag(args.ref_source_tags)
+    pred_source_tags = read_tag(args.pred_source_tags)
     f1_bad_src, f1_good_src, mcc_src = compute_scores(ref_source_tags, pred_source_tags)
     f1_multi_src = f1_bad_src * f1_good_src
 
@@ -105,8 +103,8 @@ def main():
 
 
     # MT (only word or word&gap)
-    ref_mt_tags = read_tag(join(args.ref_dir, mt_tag_fn))
-    pred_mt_tags = read_tag(join(args.pred_dir, mt_tag_fn))
+    ref_mt_tags = read_tag(args.ref_tags)
+    pred_mt_tags = read_tag(args.pred_tags)
     f1_bad_tg, f1_good_tg, mcc_tg = compute_scores(ref_mt_tags, pred_mt_tags)
     f1_multi_tg = f1_bad_tg * f1_good_tg
 
@@ -118,9 +116,9 @@ def main():
 
 
     # GAP
-    if gap_tag_fn is not None:
-        ref_gap_tags = read_tag(join(args.ref_dir, gap_tag_fn))
-        pred_gap_tags = read_tag(join(args.pred_dir, gap_tag_fn))
+    if not args.evaluate_merged_mt:
+        ref_gap_tags = read_tag(args.ref_gap_tags)
+        pred_gap_tags = read_tag(args.pred_gap_tags)
         f1_bad_gap, f1_good_gap, mcc_gap = compute_scores(ref_gap_tags, pred_gap_tags)
         f1_multi_gap = f1_bad_gap * f1_good_gap
 
