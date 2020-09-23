@@ -6,7 +6,7 @@ import numpy as np
 import os
 
 from pathlib import Path
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, recall_score, precision_score
 
 def list_of_lists(a_list):
     '''
@@ -30,8 +30,15 @@ def flatten(lofl):
 def compute_scores(true_tags, test_tags):
     flat_true = flatten(true_tags)
     flat_pred = flatten(test_tags)
+    rev_flat_true = [1 if t == 0 else 0 for t in flat_true]
+    rev_flat_pred = [1 if t == 0 else 0 for t in flat_pred]
 
-    f1_all_scores = f1_score(flat_true, flat_pred, average=None, pos_label=None)
+    ok_preceision = precision_score(flat_true, flat_pred)
+    ok_recall = recall_score(flat_true, flat_pred)
+    bad_precision = precision_score(rev_flat_true, rev_flat_pred)
+    bad_recall = recall_score(rev_flat_true, rev_flat_pred)
+
+    bad_f1, ok_f1 = f1_score(flat_true, flat_pred, average=None, pos_label=None)
 
     # Matthews correlation coefficient (MCC)
     # true/false positives/negatives
@@ -52,7 +59,7 @@ def compute_scores(true_tags, test_tags):
     mcc_denominator = ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)) ** 0.5
     mcc = mcc_numerator / mcc_denominator
 
-    return np.append(f1_all_scores, mcc)
+    return ok_preceision, ok_recall, ok_f1, bad_precision, bad_recall, bad_f1, mcc
 
 
 def parse_args():
@@ -92,42 +99,50 @@ def main():
     # Source
     ref_source_tags = read_tag(args.ref_source_tags)
     pred_source_tags = read_tag(args.pred_source_tags)
-    f1_bad_src, f1_good_src, mcc_src = compute_scores(ref_source_tags, pred_source_tags)
-    f1_multi_src = f1_bad_src * f1_good_src
+    src_ok_pre, src_ok_rec, src_ok_f1, src_bad_pre, src_bad_rec, src_bad_f1, src_mcc = compute_scores(ref_source_tags, pred_source_tags)
+    # f1_bad_src, f1_good_src, mcc_src = compute_scores(ref_source_tags, pred_source_tags)
+    src_f1_multi = src_ok_f1 * src_bad_f1
 
-    print('src_mcc: {:.4}'.format(mcc_src))
-    print("src_f1-bad: {:.4}".format(f1_bad_src))
-    print('src_f1-good: {:.4}'.format(f1_good_src))
-    print('src_f1-multi: {:.4}'.format(f1_multi_src))
+    print(f'src_ok_precision: {src_ok_pre:.4}')
+    print(f'src_ok_recall: {src_ok_rec:.4}')
+    print(f'src_ok_f1: {src_ok_f1:.4}')
+    print(f'src_bad_precision: {src_bad_pre:.4}')
+    print(f'src_bad_recall: {src_bad_rec:.4}')
+    print(f'src_bad_f1: {src_bad_f1:.4}')
+    print(f'src_mcc:{src_mcc:.4}')
     print('---')
 
 
     # MT (only word or word&gap)
     ref_mt_tags = read_tag(args.ref_tags)
     pred_mt_tags = read_tag(args.pred_tags)
-    f1_bad_tg, f1_good_tg, mcc_tg = compute_scores(ref_mt_tags, pred_mt_tags)
-    f1_multi_tg = f1_bad_tg * f1_good_tg
+    mt_ok_pre, mt_ok_rec, mt_ok_f1, mt_bad_pre, mt_bad_rec, mt_bad_f1, mt_mcc = compute_scores(ref_mt_tags, pred_mt_tags)
+    mt_f1_multi = mt_ok_f1 * mt_bad_f1
 
-    print('mt_mcc: {:.4}'.format(mcc_tg))
-    print("mt_f1-bad: {:.4}".format(f1_bad_tg))
-    print('mt_f1-good: {:.4}'.format(f1_good_tg))
-    print('mt_f1-multi: {:.4}'.format(f1_multi_tg))
+    print(f'mt_ok_precision: {mt_ok_pre:.4}')
+    print(f'mt_ok_recall: {mt_ok_rec:.4}')
+    print(f'mt_ok_f1: {mt_ok_f1:.4}')
+    print(f'mt_bad_precision: {mt_bad_pre:.4}')
+    print(f'mt_bad_recall: {mt_bad_rec:.4}')
+    print(f'mt_bad_f1: {mt_bad_f1:.4}')
+    print(f'mt_mcc:{mt_mcc:.4}')
     print('---')
-
 
     # GAP
     if not args.evaluate_merged_mt:
         ref_gap_tags = read_tag(args.ref_gap_tags)
         pred_gap_tags = read_tag(args.pred_gap_tags)
-        f1_bad_gap, f1_good_gap, mcc_gap = compute_scores(ref_gap_tags, pred_gap_tags)
-        f1_multi_gap = f1_bad_gap * f1_good_gap
+        gap_ok_pre, gap_ok_rec, gap_ok_f1, gap_bad_pre, gap_bad_rec, gap_bad_f1, gap_mcc = compute_scores(ref_gap_tags, pred_gap_tags)
+        gap_f1_multi = gap_ok_f1 * gap_bad_f1
 
-        print("gaps_mcc: {:.4}".format(mcc_gap))
-        print("gaps_f1-bad: {:.4}".format(f1_bad_gap))
-        print('gaps_f1-good: {:.4}'.format(f1_good_gap))
-        print('gaps_f1-multi: {:.4}'.format(f1_multi_gap))
+        print(f'gap_ok_precision: {gap_ok_pre:.4}')
+        print(f'gap_ok_recall: {gap_ok_rec:.4}')
+        print(f'gap_ok_f1: {gap_ok_f1:.4}')
+        print(f'gap_bad_precision: {gap_bad_pre:.4}')
+        print(f'gap_bad_recall: {gap_bad_rec:.4}')
+        print(f'gap_bad_f1: {gap_bad_f1:.4}')
+        print(f'gap_mcc:{gap_mcc:.4}')
         print('---')
-
 
 
 if __name__ == '__main__':
