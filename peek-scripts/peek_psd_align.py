@@ -33,7 +33,7 @@ def output_res(res_lines):
 
     for k, v in res_container:
         print(f'{k}: {v}')
-        
+
 
 def main():
     args = parse_args()
@@ -46,7 +46,7 @@ def main():
     mt_tokens_lines = read_tokens(args.mt)
     aligns_lines = read_tokens(args.psd_align)
     source_tags_lines = read_tokens(args.source_tags)
-    mt_tags_lines = read_tokens(args.mt_tokens)
+    mt_tags_lines = read_tokens(args.mt_tags)
 
     assert len(src_tokens_lines) == len(mt_tokens_lines) == len(aligns_lines) == len(source_tags_lines) == len(mt_tags_lines)
 
