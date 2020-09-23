@@ -72,7 +72,7 @@ def parse_args():
 
     args = parser.parse_args()
 
-    assert  (args.evaluate_merged_mt) or (args.ref_gaps_tags is not None and args.pred_gaps_tags is not None)
+    assert  (args.evaluate_merged_mt) or (args.ref_gap_tags is not None and args.pred_gap_tags is not None)
 
     return args
 

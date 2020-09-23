@@ -226,7 +226,7 @@ def process_sim(sim, masks, args):
         if process_method is None:
             pass
 
-        if process_method == 'ref_argmax':
+        elif process_method == 'ref_argmax':
             arg_indices = sim_matrix.argmax(dim=-1)
             arg_mask = torch.ones_like(sim_matrix)
             for i, j in enumerate(arg_indices):
