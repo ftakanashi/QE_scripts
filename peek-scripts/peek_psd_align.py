@@ -72,7 +72,7 @@ def main():
             elif len(align_map[i]) > 0:
                 for j in align_map[i]:
                     if mt_tags[j] != source_tags[i]:
-                        res['unmatch_tag'] += 1
+                        res['dismatch_tag'] += 1
 
         for j, mt_tok in enumerate(mt_tokens):
             if len(rev_align_map[j]) == 0 and mt_tags[j] != 'BAD':
