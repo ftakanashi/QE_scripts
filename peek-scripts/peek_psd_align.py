@@ -31,7 +31,7 @@ def output_res(res_lines):
         for key in res.keys():
             res_container[key] += res[key]
 
-    for k, v in res_container:
+    for k, v in res_container.items():
         print(f'{k}: {v}')
 
 
