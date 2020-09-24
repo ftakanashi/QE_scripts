@@ -53,6 +53,8 @@ def main():
     res_lines = []
     for src_tokens, mt_tokens, aligns, source_tags, mt_tags in zip(src_tokens_lines, mt_tokens_lines, aligns_lines,
                                                                    source_tags_lines, mt_tags_lines):
+        assert len(src_tokens) == len(source_tags)
+        assert len(mt_tokens) == len(mt_tags)
         if len(mt_tags) == 2 * len(mt_tokens) + 1:
             mt_tags = mt_tags[1::2]
 
