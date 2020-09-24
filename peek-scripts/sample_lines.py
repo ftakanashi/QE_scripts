@@ -42,7 +42,7 @@ def main():
     for lines in files_lines:
         assert len(lines) == std_len
 
-    if args.line_num > 0:
+    if len(args.line_num) > 0:
         sampled_indices = args.line_num
 
     else:
