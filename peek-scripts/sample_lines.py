@@ -1,0 +1,55 @@
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+
+import argparse
+import random
+
+from pathlib import Path
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('-f', '--files', nargs='+',
+                        help='List of files')
+    parser.add_argument('-ln', '--line-num', nargs='+', type=int,
+                        help='Specify the indices of lines to peek.')
+    parser.add_argument('-rs', '--random-sample', type=int,
+                        help='Specify the number of lines which will be randomly sampled from files.')
+
+    args = parser.parse_args()
+
+    assert len(args.files) > 0
+    assert len(args.line_num) > 0 or len(args.random_sample) > 0
+
+    return args
+
+def print_out(line_no, files_lines):
+    print('=' * 10 + f' LINE_NO[{line_no}] ' + '=' * 10)
+    for lines in files_lines:
+        print(lines[line_no])
+        print('')
+    print('')
+
+def main():
+    args = parse_args()
+
+    files_lines = []
+    for f in args.files:
+        with Path(f).open() as f:
+            files_lines.append([l.strip() for l in f])
+
+    std_len = len(files_lines[0])
+    for lines in files_lines:
+        assert len(lines) == std_len
+
+    if args.line_num > 0:
+        sampled_indices = args.line_num
+
+    else:
+        sampled_indices = random.sample(range(std_len), args.random_sample)
+
+    for ln in sorted(sampled_indices):
+        print_out(ln, files_lines)
+
+if __name__ == '__main__':
+    main()
