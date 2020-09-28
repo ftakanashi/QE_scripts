@@ -30,7 +30,10 @@ def parse_args():
     parser.add_argument('-o', '--output',
                         help='Path to the output file.')
     parser.add_argument('--tmp-working-dir', default='tmp',
-                        help='A working dir for temporarily saving .lp files and etc.')
+                        help='A working dir for temporarily saving .lp files and etc.'
+                             'DEFAULT: tmp')
+    parser.add_argument('--cplex-bin', default='/opt/ibm/cplex',
+                        help='Path to the CPLEX binary file. DEFAULT: /opt/ibm/cplex')
 
     args = parser.parse_args()
 
@@ -105,7 +108,8 @@ def cplex_stdout_analyze(output):
 
 
 def optimize_and_analyze(sent_infos, args):
-    cplex_bin = '/nfs/gshare/optimizer_nishino/CPLEX_Studio128/cplex/bin/x86-64_linux/cplex'
+    # cplex_bin = '/nfs/gshare/optimizer_nishino/CPLEX_Studio128/cplex/bin/x86-64_linux/cplex'
+    cplex_bin = args.cplex_bin
     tmp_dir = args.tmp_working_dir
 
     def run_cmd(cmd):
