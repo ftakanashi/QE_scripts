@@ -62,7 +62,7 @@ def generate_sent_lps(sent_infos, args):
                 direc, word_id, s, e = var.split('_')
                 if s == 'X' or e == 'X':
                     assert s == 'X' and e == 'X', 'start index and end index are not both -1.'
-                    val = prob
+                    val = 1 - prob
                 else:
                     val = 1 - prob
                     s, e = map(int, (s, e))
