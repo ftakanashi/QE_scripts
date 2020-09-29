@@ -19,7 +19,7 @@ def parse_args():
     args = parser.parse_args()
 
     assert len(args.files) > 0
-    assert len(args.line_num) > 0 or len(args.random_sample) > 0
+    assert args.line_num is not None or args.random_sample is not None
 
     return args
 
