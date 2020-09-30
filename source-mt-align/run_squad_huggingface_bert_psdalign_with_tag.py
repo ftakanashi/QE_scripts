@@ -15,6 +15,13 @@
 # limitations under the License.
 """ Finetuning the library models for question-answering on SQuAD (DistilBERT, Bert, XLM, XLNet)."""
 
+NOTE = \
+    '''
+        This script is written for the pattern in which QE tags are output along with the pseudo alignment prediction.
+        Since the pseudo alignments are predicted in QA format, output of tokens in the rear half will be used. Then the 
+        script will use the output of CLS to predict QE tag. 
+    '''
+
 import argparse
 import collections
 import glob
@@ -76,8 +83,6 @@ def to_list(tensor):
     return tensor.detach().cpu().tolist()
 
 
-
-
 #################################################################
 #
 #  Start:
@@ -92,6 +97,7 @@ from transformers.modeling_bert import BertPreTrainedModel, BertModel, BERT_INPU
     _CONFIG_FOR_DOC
 from transformers.file_utils import add_start_docstrings_to_callable, add_code_sample_docstrings, ModelOutput
 from torch.nn.modules.loss import CrossEntropyLoss
+
 
 class PsdalignSquadProcessor(SquadV2Processor):
 
@@ -190,7 +196,7 @@ class BertForQETagPrediction(BertPreTrainedModel):
         self.bert = BertModel(config)
         self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
 
-        self.qe_tag_outputs = nn.Linear(config.hidden_size, 2)    # OK or BAD
+        self.qe_tag_outputs = nn.Linear(config.hidden_size, 2)  # OK or BAD
 
         self.init_weights()
 
@@ -202,19 +208,19 @@ class BertForQETagPrediction(BertPreTrainedModel):
     #     config_class=_CONFIG_FOR_DOC,
     # )
     def forward(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
-        start_positions=None,
-        end_positions=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-        qe_tags=None,
+            self,
+            input_ids=None,
+            attention_mask=None,
+            token_type_ids=None,
+            position_ids=None,
+            head_mask=None,
+            inputs_embeds=None,
+            start_positions=None,
+            end_positions=None,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=None,
+            qe_tags=None,
     ):
         r"""
         start_positions (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`, defaults to :obj:`None`):
@@ -289,8 +295,6 @@ class BertForQETagPrediction(BertPreTrainedModel):
 #  End
 #
 #################################################################
-
-
 
 
 ########################################################################
@@ -698,7 +702,7 @@ def compute_predictions_logits(
             result = unique_id_to_result[feature.unique_id]
             start_indexes = _get_best_indexes(result.start_logits, n_best_size)
             end_indexes = _get_best_indexes(result.end_logits, n_best_size)
-            qe_tag = _get_best_indexes(result.qe_tag_logits, 1)[0]   # get qe_tag prediction for this sample
+            qe_tag = _get_best_indexes(result.qe_tag_logits, 1)[0]  # get qe_tag prediction for this sample
             # if we could have irrelevant answers, get the min score of irrelevant
             if version_2_with_negative:
                 feature_null_score = result.start_logits[0] + result.end_logits[0]
@@ -745,7 +749,7 @@ def compute_predictions_logits(
                     end_index=0,
                     start_logit=null_start_logit,
                     end_logit=null_end_logit,
-                    qe_tag=0,    # if null-answered tag must be BAD
+                    qe_tag=0,  # if null-answered tag must be BAD
                 )
             )
         prelim_predictions = sorted(prelim_predictions, key=lambda x: (x.start_logit + x.end_logit), reverse=True)
@@ -1091,7 +1095,6 @@ def compute_predictions_log_probs(
 #################################################################
 
 
-
 #################################################################
 #
 #  Start:
@@ -1121,7 +1124,7 @@ def _improve_answer_span(doc_tokens, input_start, input_end, tokenizer, orig_ans
 
     for new_start in range(input_start, input_end + 1):
         for new_end in range(input_end, new_start - 1, -1):
-            text_span = " ".join(doc_tokens[new_start : (new_end + 1)])
+            text_span = " ".join(doc_tokens[new_start: (new_end + 1)])
             if text_span == tok_answer_text:
                 return (new_start, new_end)
 
@@ -1177,7 +1180,7 @@ def _is_whitespace(c):
 
 
 def squad_convert_example_to_features(
-    example, max_seq_length, doc_stride, max_query_length, padding_strategy, is_training
+        example, max_seq_length, doc_stride, max_query_length, padding_strategy, is_training
 ):
     features = []
     if is_training and not example.is_impossible:
@@ -1186,7 +1189,7 @@ def squad_convert_example_to_features(
         end_position = example.end_position
 
         # If the answer cannot be found in the text, then skip this example.
-        actual_text = " ".join(example.doc_tokens[start_position : (end_position + 1)])
+        actual_text = " ".join(example.doc_tokens[start_position: (end_position + 1)])
         cleaned_answer_text = " ".join(whitespace_tokenize(example.answer_text))
         if actual_text.find(cleaned_answer_text) == -1:
             logger.warning("Could not find answer: '%s' vs. '%s'", actual_text, cleaned_answer_text)
@@ -1263,9 +1266,10 @@ def squad_convert_example_to_features(
                 non_padded_ids = encoded_dict["input_ids"][: encoded_dict["input_ids"].index(tokenizer.pad_token_id)]
             else:
                 last_padding_id_position = (
-                    len(encoded_dict["input_ids"]) - 1 - encoded_dict["input_ids"][::-1].index(tokenizer.pad_token_id)
+                        len(encoded_dict["input_ids"]) - 1 - encoded_dict["input_ids"][::-1].index(
+                    tokenizer.pad_token_id)
                 )
-                non_padded_ids = encoded_dict["input_ids"][last_padding_id_position + 1 :]
+                non_padded_ids = encoded_dict["input_ids"][last_padding_id_position + 1:]
 
         else:
             non_padded_ids = encoded_dict["input_ids"]
@@ -1288,7 +1292,7 @@ def squad_convert_example_to_features(
         spans.append(encoded_dict)
 
         if "overflowing_tokens" not in encoded_dict or (
-            "overflowing_tokens" in encoded_dict and len(encoded_dict["overflowing_tokens"]) == 0
+                "overflowing_tokens" in encoded_dict and len(encoded_dict["overflowing_tokens"]) == 0
         ):
             break
         span_doc_tokens = encoded_dict["overflowing_tokens"]
@@ -1311,9 +1315,9 @@ def squad_convert_example_to_features(
         # Original TF implem also keep the classification token (set to 0)
         p_mask = np.ones_like(span["token_type_ids"])
         if tokenizer.padding_side == "right":
-            p_mask[len(truncated_query) + sequence_added_tokens :] = 0
+            p_mask[len(truncated_query) + sequence_added_tokens:] = 0
         else:
-            p_mask[-len(span["tokens"]) : -(len(truncated_query) + sequence_added_tokens)] = 0
+            p_mask[-len(span["tokens"]): -(len(truncated_query) + sequence_added_tokens)] = 0
 
         pad_token_indices = np.where(span["input_ids"] == tokenizer.pad_token_id)
         special_token_indices = np.asarray(
@@ -1359,7 +1363,8 @@ def squad_convert_example_to_features(
                 span["token_type_ids"],
                 cls_index,
                 p_mask.tolist(),
-                example_index=0,  # Can not set unique_id and example_index here. They will be set after multiple processing.
+                example_index=0,
+                # Can not set unique_id and example_index here. They will be set after multiple processing.
                 unique_id=0,
                 paragraph_len=span["paragraph_len"],
                 token_is_max_context=span["token_is_max_context"],
@@ -1381,16 +1386,16 @@ def squad_convert_example_to_features_init(tokenizer_for_convert):
 
 
 def squad_convert_examples_to_features(
-    examples,
-    tokenizer,
-    max_seq_length,
-    doc_stride,
-    max_query_length,
-    is_training,
-    padding_strategy="max_length",
-    return_dataset=False,
-    threads=1,
-    tqdm_enabled=True,
+        examples,
+        tokenizer,
+        max_seq_length,
+        doc_stride,
+        max_query_length,
+        is_training,
+        padding_strategy="max_length",
+        return_dataset=False,
+        threads=1,
+        tqdm_enabled=True,
 ):
     """
     Converts a list of examples into a list of features that can be directly given as input to a model.
@@ -1452,7 +1457,7 @@ def squad_convert_examples_to_features(
     unique_id = 1000000000
     example_index = 0
     for example_features in tqdm(
-        features, total=len(features), desc="add example index and unique id", disable=not tqdm_enabled
+            features, total=len(features), desc="add example index and unique id", disable=not tqdm_enabled
     ):
         if not example_features:
             continue
@@ -1606,12 +1611,12 @@ def squad_convert_examples_to_features(
     else:
         return features
 
+
 #################################################################
 #
 #  End
 #
 #################################################################
-
 
 
 #################################################################
