@@ -5,17 +5,6 @@ import argparse
 import os
 
 from pathlib import Path
-from subprocess import Popen, PIPE
-
-
-def run_cmd(cmd):
-    p = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
-    out, err = p.communicate()
-    if err:
-        raise RuntimeError(f'Error encountered while running [{cmd}]:\n{err}')
-    else:
-        return out
-
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -35,6 +24,9 @@ def parse_args():
     args = parser.parse_args()
     return args
 
+def run_cmd(cmd):
+    print(cmd)
+    os.system(cmd)
 
 def main():
     args = parse_args()
@@ -49,18 +41,13 @@ def main():
 
     forward_align_fn = os.path.join(args.tmp_working_dir, 'forward.align')
     reverse_align_fn = os.path.join(args.tmp_working_dir, 'reverse.align')
-    print(
-        run_cmd(f'{args.fast_align_bin_dir}/fast_align -i {concat_corpus} -d -o -v > {forward_align_fn}')
-    )
 
-    print(
-        run_cmd(f'{args.fast_align_bin_dir}/fast_align -i {concat_corpus} -d -o -v -r > {reverse_align_fn}')
-    )
+    run_cmd(f'{args.fast_align_bin_dir}/fast_align -i {concat_corpus} -d -o -v > {forward_align_fn}')
 
-    print(
-        run_cmd(
-            f'{args.fast_align_bin_dir}/atools -i {forward_align_fn} -j {reverse_align_fn} -c grow-diag-final-and > {args.output}')
-    )
+    run_cmd(f'{args.fast_align_bin_dir}/fast_align -i {concat_corpus} -d -o -v -r > {reverse_align_fn}')
+
+    run_cmd(f'{args.fast_align_bin_dir}/atools -i {forward_align_fn} -j {reverse_align_fn} -c grow-diag-final-and >'
+            f' {args.output}')
 
 if __name__ == '__main__':
     main()
