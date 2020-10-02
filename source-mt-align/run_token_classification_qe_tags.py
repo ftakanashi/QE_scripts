@@ -698,7 +698,7 @@ def main():
     )
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
-        do_lower_case=training_args.do_lower_case,
+        do_lower_case=data_args.do_lower_case,
         cache_dir=model_args.cache_dir,
         use_fast=model_args.use_fast,
     )
