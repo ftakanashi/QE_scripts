@@ -168,6 +168,11 @@ def pad_batch_stats(sen_batch, stats_dict, device):
         return base < lens.unsqueeze(1)
 
     pad_mask = length_to_mask(lens).to(device)
+
+    pad_mask[:, 0] = False  # pad out CLS
+    for i, le in enumerate(lens):
+        pad_mask[i, le - 1] = False  # pad out SEP
+
     return emb_pad, pad_mask
 
 
@@ -194,11 +199,12 @@ def generate_lp(sim_matrix, h_len, r_len, mask, wf_fn, hyp_offset_map, ref_offse
         print(msg, file=wf, **kwargs)
 
     vars = {}
+
     for h in range(h_len):
-        if h + 1 < h_len and mask[h + 1, :].sum() == 0:
+        if mask[h, :].sum() == 0:
             break
         for r in range(r_len):
-            if r + 1 < r_len and mask[h, r + 1] == 0:
+            if mask[h, r] == 0:
                 break
             vars[f'{h}_{r}'] = sim_matrix[h, r]
 
@@ -256,7 +262,6 @@ def cplex_analyze(batch_size, align_lines, args):
             aligns.append((i, j))
 
         align_lines.append(aligns)
-
 
 
 def adapt_offset(align_lines, hyp_offset_mappings, ref_offset_mappings):
@@ -380,11 +385,12 @@ def process_sim(sim, masks, args, hyp_offset_mappings, ref_offset_mappings):
             pass
         else:
             for i in range(longest_hyp_len):
-                if i + 1 < longest_hyp_len and mask[i + 1, :].sum() == 0:  # PAD
+                if mask[i, :].sum() == 0:
                     break
                 for j in range(longest_ref_len):
-                    if j + 1 < longest_ref_len and mask[i, j + 1] == 0:  # PAD
+                    if mask[i, j] == 0:
                         break
+
                     if sim_matrix[i, j] >= threshold:
                         align.append((i, j))
 
