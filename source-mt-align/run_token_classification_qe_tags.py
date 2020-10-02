@@ -14,24 +14,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """ Fine-tuning the library models for named entity recognition on CoNLL-2003. """
+
+NOTE = \
+'''
+    This script is modified from huggingface/transformer's run_ner.py.
+    To put it in a simple way, it is a script for token classification, and specifically word-wise word tag prediction.
+    Some newly added arguments are:
+    --source_text FILE
+    --mt_text FILE
+    --source_qe_tags FILE    [only required in training]
+    --mt_qe_tags FILE    [only required in training]
+    
+    A typical composition of arguments is like this:
+    --model_type bert --model_name_or_path model --do_train --source_text xxx --mt_text xxx --source_qe_tags xxx 
+    --mt_qe_tags xxx --max_seq_length 384 --output_dir output --per_device_train_batch_size 8 --save_steps 10000 
+    --num_train_epochs 5.0 --overwrite_cache --overwrite_output_dir
+'''
+
+
 import logging
 import os
-import sys
 from dataclasses import dataclass, field
-from importlib import import_module
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-# from seqeval.metrics import accuracy_score, f1_score, precision_score, recall_score
-from torch import nn
 
 from transformers import (
     AutoConfig,
-    AutoModelForTokenClassification,
+    # AutoModelForTokenClassification,
     AutoTokenizer,
-    EvalPrediction,
+    # EvalPrediction,
     HfArgumentParser,
-    Trainer,
+    # Trainer,
     TrainingArguments,
     set_seed,
 )

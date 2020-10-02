@@ -16,11 +16,18 @@
 """ Finetuning the library models for question-answering on SQuAD (DistilBERT, Bert, XLM, XLNet)."""
 
 NOTE = \
-    '''
-        This script is written for the pattern in which QE tags are output along with the pseudo alignment prediction.
-        Since the pseudo alignments are predicted in QA format, output of tokens in the rear half will be used. Then the 
-        script will use the output of CLS to predict QE tag. 
-    '''
+'''
+    The script is modified from huggingface/transformer's run_squad.py for (pseudo) word alignment for Source-MT. Input 
+    and output data is organized in SQuAD 2.0 JSON format.
+    An additional classifier is added at the top of CLS output for word QE tag prediction. Thus, word tag files are 
+    also required as the fine-tuning data and the fine-tuned model is able to predict word tag as well(though not 
+    accurate...)
+    
+    # About usage
+    As input and output data are organized in SQuAD JSON, arguments in this script has not been changed compared to 
+    the original run_squad.py .
+    Plz refer to the corresponding scripts build_psdalign_squad.py and pred2psdalign.py for adapted usage case.
+'''
 
 import argparse
 import collections
