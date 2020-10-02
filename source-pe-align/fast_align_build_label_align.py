@@ -43,7 +43,7 @@ def main():
         os.makedirs(args.tmp_working_dir)
 
     concat_corpus = os.path.join(args.tmp_working_dir, 'concat_corpus')
-    cmd = "paste " + str(args.src) + " " + str(args.tgt) + " > awk -F '\\t' '{print $1 \" ||| \" $2}' > " + \
+    cmd = "paste " + str(args.src) + " " + str(args.tgt) + " | awk -F '\\t' '{print $1 \" ||| \" $2}' > " + \
           concat_corpus
     run_cmd(cmd)
 
