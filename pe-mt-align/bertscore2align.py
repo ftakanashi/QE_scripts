@@ -12,6 +12,7 @@ NOTE = \
     '''
 
 import argparse
+import collections
 import itertools
 import numpy as np
 import os
@@ -186,7 +187,7 @@ def greedy_cos_sim(ref_embedding, ref_masks, hyp_embedding, hyp_masks):
     return sim, masks  # (batch_size, longest(in_batch)_hyp_len, longest(in_batch)_ref_len)
 
 
-def generate_lp(sim_matrix, h_len, r_len, mask, wf_fn):
+def generate_lp(sim_matrix, h_len, r_len, mask, wf_fn, hyp_offset_map, ref_offset_map):
     wf = wf_fn.open('w')
 
     def printw(msg, **kwargs):
@@ -194,10 +195,10 @@ def generate_lp(sim_matrix, h_len, r_len, mask, wf_fn):
 
     vars = {}
     for h in range(h_len):
-        if h + 1 >= h_len or mask[h + 1, :].sum() == 0:
+        if h + 1 < h_len and mask[h + 1, :].sum() == 0:
             break
         for r in range(r_len):
-            if r + 1 >= r_len or mask[h, r + 1] == 0:
+            if r + 1 < r_len and mask[h, r + 1] == 0:
                 break
             vars[f'{h}_{r}'] = sim_matrix[h, r]
 
@@ -207,14 +208,6 @@ def generate_lp(sim_matrix, h_len, r_len, mask, wf_fn):
         printw(f'+ {val} x{var}')
 
     printw('\nSubject to\n')
-
-    # for h in range(h_len):
-    #     printw(f'hyp_{h}')
-    #     for r in range(r_len):
-    #         var = f'{h}_{r}'
-    #         if var in vars.keys():
-    #             printw(f'1 + x{var}')
-    #     printw('= 1\n')
 
     for r in range(r_len):
         printw(f'ref_{r}')
@@ -240,7 +233,6 @@ def cplex_stdout_analyze(output):
 
 
 def cplex_analyze(batch_size, align_lines, args):
-    # cplex_bin = '/nfs/gshare/optimizer_nishino/CPLEX_Studio128/cplex/bin/x86-64_linux/cplex'
     cplex_bin = args.cplex_bin
     tmp_dir = args.tmp_working_dir
 
@@ -266,7 +258,29 @@ def cplex_analyze(batch_size, align_lines, args):
         align_lines.append(aligns)
 
 
-def process_sim(sim, masks, args):
+
+def adapt_offset(align_lines, hyp_offset_mappings, ref_offset_mappings):
+    new_align_lines = []
+    for i, align_line in enumerate(align_lines):
+        hyp_offset_mapping = hyp_offset_mappings[i]
+        ref_offset_mapping = ref_offset_mappings[i]
+
+        try:
+            new_align_lines.append(
+                list(set(
+                    (hyp_offset_mapping[x], ref_offset_mapping[y]) for x, y in align_line
+                ))
+            )
+        except Exception as e:
+            print(i, align_line)
+            print(hyp_offset_mapping)
+            print(ref_offset_mapping)
+            raise e
+
+    return new_align_lines
+
+
+def process_sim(sim, masks, args, hyp_offset_mappings, ref_offset_mappings):
     threshold = args.sim_threshold
     process_method = args.sim_process_method
 
@@ -277,7 +291,10 @@ def process_sim(sim, masks, args):
         sim_matrix = sim[b, 1:-1, 1:-1]  # exclude first row and col (CLS) and last row and col(SEP or PAD)
         longest_hyp_len, longest_ref_len = sim_matrix.shape
         mask = masks[b, 1:-1, 1:-1].type(torch.bool)
+        hyp_offset_map = hyp_offset_mappings[b]
+        ref_offset_map = ref_offset_mappings[b]
 
+        # extract alignments via various process methods
         align = []
         if process_method is None:
             pass
@@ -295,7 +312,8 @@ def process_sim(sim, masks, args):
             assert os.path.isdir(args.tmp_working_dir), f'output path [{args.tmp_working_dir}] should be a directory ' \
                                                         f'if sim_process_method is specified to be ilp'
             wf_fn = Path(os.path.join(args.tmp_working_dir, f'sent_{b}.lp'))
-            generate_lp(sim_matrix, longest_hyp_len, longest_ref_len, mask, wf_fn)
+            generate_lp(sim_matrix, longest_hyp_len, longest_ref_len, mask, wf_fn,
+                        hyp_offset_map, ref_offset_map)
 
         elif process_method == 'hungarian':
             cost_matrix = torch.ones_like(sim_matrix)
@@ -375,28 +393,9 @@ def process_sim(sim, masks, args):
     if process_method == 'ilp':
         cplex_analyze(batch_size, align_lines, args)
 
+    align_lines = adapt_offset(align_lines, hyp_offset_mappings, ref_offset_mappings)
+
     return align_lines
-
-
-def adapt_offset(align_lines, hyp_offset_mappings, ref_offset_mappings):
-    new_align_lines = []
-    for i, align_line in enumerate(align_lines):
-        hyp_offset_mapping = hyp_offset_mappings[i]
-        ref_offset_mapping = ref_offset_mappings[i]
-
-        try:
-            new_align_lines.append(
-                list(set(
-                    (hyp_offset_mapping[x], ref_offset_mapping[y]) for x, y in align_line
-                ))
-            )
-        except Exception as e:
-            print(i, align_line)
-            print(hyp_offset_mapping)
-            print(ref_offset_mapping)
-            raise e
-
-    return new_align_lines
 
 
 def bert_score_to_align(hyps, refs, args):
@@ -446,9 +445,8 @@ def bert_score_to_align(hyps, refs, args):
 
             sim, masks = greedy_cos_sim(*ref_stats, *hyp_stats)
 
-            batch_align_lines = process_sim(sim, masks, args)
-
-            batch_align_lines = adapt_offset(batch_align_lines, hyp_offset_mappings, ref_offset_mappings)
+            batch_align_lines = process_sim(sim, masks, args, hyp_offset_mappings, ref_offset_mappings)
+            # batch_align_lines = adapt_offset(batch_align_lines, hyp_offset_mappings, ref_offset_mappings)
             align_lines.extend(batch_align_lines)
 
     return align_lines
