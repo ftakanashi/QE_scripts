@@ -32,7 +32,7 @@ def main():
     args = parse_args()
 
     if not os.path.isdir(args.tmp_working_dir):
-        os.makedirs(args.tmp_working_dir)
+        os.makedirs(args.tmp_working_dir, exist_ok=True)
 
     concat_corpus = os.path.join(args.tmp_working_dir, 'concat_corpus')
     cmd = "paste " + str(args.src) + " " + str(args.tgt) + " | awk -F '\\t' '{print $1 \" ||| \" $2}' > " + \

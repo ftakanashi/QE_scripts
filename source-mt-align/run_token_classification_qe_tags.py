@@ -314,7 +314,9 @@ class QETagClassificationTrainer(Trainer):
         model = self.model
         # multi-gpu eval
         if self.args.n_gpu > 1:
+            generate_mask_method = model.generate_source_and_mt_tag_mask
             model = torch.nn.DataParallel(model)
+            model.generate_source_and_mt_tag_mask = generate_mask_method
         else:
             model = self.model
 
