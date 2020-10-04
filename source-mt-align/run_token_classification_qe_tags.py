@@ -119,6 +119,34 @@ def map_offset(origin_text, tokenizer):
     return mapping
 
 
+def generate_source_and_mt_tag_mask(token_type_ids):
+    '''
+    generate masks for source tags and MT tags. Note that CLS and SEP are not included.
+    specifically, identifying the min and max indices of 1 in token_type_ids, which respectively identifies the
+    first token of MT text and the SEP token of MT text.
+    '''
+    batch_size, max_len = token_type_ids.shape
+    source_tag_masks = []
+    mt_tag_masks = []
+    for i in range(batch_size):
+        row_type_ids = token_type_ids[i, :]
+        _mt_indices = row_type_ids.nonzero().view(-1)
+        min_i, max_i = _mt_indices.min(), _mt_indices.max()
+
+        source_tag_mask = torch.zeros_like(row_type_ids)
+        source_tag_mask[1:min_i - 1] = 1  # CLS and SEP for source text are excluded
+
+        mt_tag_mask = torch.zeros_like(row_type_ids)
+        mt_tag_mask[min_i:max_i] = 1  # SEP for MT text is excluded
+
+        source_tag_masks.append(source_tag_mask.type(torch.bool))
+        mt_tag_masks.append(mt_tag_mask.type(torch.bool))
+
+    source_tag_masks = torch.stack(source_tag_masks, dim=0)
+    mt_tag_masks = torch.stack(mt_tag_masks, dim=0)
+    return source_tag_masks, mt_tag_masks
+
+
 @dataclass
 class QETagClassificationInputExample:
     guid: str
@@ -314,9 +342,7 @@ class QETagClassificationTrainer(Trainer):
         model = self.model
         # multi-gpu eval
         if self.args.n_gpu > 1:
-            generate_mask_method = model.generate_source_and_mt_tag_mask
             model = torch.nn.DataParallel(model)
-            model.generate_source_and_mt_tag_mask = generate_mask_method
         else:
             model = self.model
 
@@ -403,7 +429,7 @@ class QETagClassificationTrainer(Trainer):
 
         with torch.no_grad():
             outputs = model(**inputs)
-            source_tag_mask, mt_tag_mask = model.generate_source_and_mt_tag_mask(inputs['token_type_ids'])
+            source_tag_mask, mt_tag_mask = generate_source_and_mt_tag_mask(inputs['token_type_ids'])
             if has_labels:
                 loss, logits = outputs[:2]
                 source_tag_logits, mt_tag_logits = logits
@@ -547,7 +573,7 @@ class BertForQETagClassification(BertPreTrainedModel):
 
         sequence_output = outputs[0]
 
-        source_tag_masks, mt_tag_masks = self.generate_source_and_mt_tag_mask(token_type_ids)
+        source_tag_masks, mt_tag_masks = generate_source_and_mt_tag_mask(token_type_ids)
 
         total_loss = None
         source_tag_logits = self.source_qe_tag_outputs(sequence_output)
@@ -567,33 +593,6 @@ class BertForQETagClassification(BertPreTrainedModel):
 
         output = ((source_tag_logits, mt_tag_logits),) + outputs[2:]
         return ((total_loss,) + output) if total_loss is not None else output
-
-    def generate_source_and_mt_tag_mask(self, token_type_ids):
-        '''
-        generate masks for source tags and MT tags. Note that CLS and SEP are not included.
-        specifically, identifying the min and max indices of 1 in token_type_ids, which respectively identifies the
-        first token of MT text and the SEP token of MT text.
-        '''
-        batch_size, max_len = token_type_ids.shape
-        source_tag_masks = []
-        mt_tag_masks = []
-        for i in range(batch_size):
-            row_type_ids = token_type_ids[i, :]
-            _mt_indices = row_type_ids.nonzero().view(-1)
-            min_i, max_i = _mt_indices.min(), _mt_indices.max()
-
-            source_tag_mask = torch.zeros_like(row_type_ids)
-            source_tag_mask[1:min_i - 1] = 1  # CLS and SEP for source text are excluded
-
-            mt_tag_mask = torch.zeros_like(row_type_ids)
-            mt_tag_mask[min_i:max_i] = 1  # SEP for MT text is excluded
-
-            source_tag_masks.append(source_tag_mask.type(torch.bool))
-            mt_tag_masks.append(mt_tag_mask.type(torch.bool))
-
-        source_tag_masks = torch.stack(source_tag_masks, dim=0)
-        mt_tag_masks = torch.stack(mt_tag_masks, dim=0)
-        return source_tag_masks, mt_tag_masks
 
 
 #############################################################
