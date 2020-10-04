@@ -351,10 +351,11 @@ class QETagClassificationTrainer(Trainer):
         logger.info("  Num examples = %d", self.num_examples(dataloader))
         logger.info("  Batch size = %d", batch_size)
         eval_losses: List[float] = []
-        # preds: torch.Tensor = None
-        source_tag_preds: torch.Tensor = None
-        mt_tag_preds: torch.Tensor = None
-        label_ids: torch.Tensor = None
+        source_tag_preds = []
+        source_tag_masks = []
+        mt_tag_preds = []
+        mt_tag_masks = []
+        label_ids = []
         model.eval()
 
         if self.args.past_index >= 0:
@@ -363,18 +364,29 @@ class QETagClassificationTrainer(Trainer):
         disable_tqdm = not self.is_local_process_zero() or self.args.disable_tqdm
         samples_count = 0
         for inputs in tqdm(dataloader, desc=description, disable=disable_tqdm):
-            loss, source_tag_logits, mt_tag_logits, source_tag_mask, mt_tag_mask, labels = \
-                self.prediction_step(model, inputs, prediction_loss_only)
+            batch_loss, batch_source_tag_logits, batch_mt_tag_logits, batch_source_tag_masks, batch_mt_tag_masks, \
+            batch_labels = self.prediction_step(model, inputs, prediction_loss_only)
+
             batch_size = inputs[list(inputs.keys())[0]].shape[0]
             samples_count += batch_size
-            if loss is not None:
-                eval_losses.append(loss * batch_size)
-            source_tag_preds = source_tag_logits
-            mt_tag_preds = mt_tag_logits
-            # if logits is not None:
-            #     preds = logits if preds is None else torch.cat((preds, logits), dim=0)
-            if labels is not None:
-                label_ids = labels if label_ids is None else torch.cat((label_ids, labels), dim=0)
+
+            if batch_loss is not None:
+                eval_losses.append(batch_loss * batch_size)
+            source_tag_preds.append(batch_source_tag_logits)
+            source_tag_masks.append(batch_source_tag_masks)
+            mt_tag_preds.append(batch_mt_tag_logits)
+            mt_tag_masks.append(batch_mt_tag_masks)
+            if batch_labels is not None:
+                label_ids.append(batch_labels)
+
+        source_tag_preds = torch.cat(source_tag_preds, dim=0)
+        source_tag_masks = torch.cat(source_tag_masks, dim=0)
+        mt_tag_preds = torch.cat(mt_tag_preds, dim=0)
+        mt_tag_masks = torch.cat(mt_tag_masks, dim=0)
+        if len(label_ids) > 0:
+            label_ids = torch.cat(label_ids, dim=0)
+        else:
+            label_ids = None
 
         if self.args.past_index and hasattr(self, "_past"):
             # Clean the state at the end of the evaluation loop
@@ -414,8 +426,8 @@ class QETagClassificationTrainer(Trainer):
 
         return QETagClassificationPredictionOutput(source_tag_predictions=source_tag_preds,
                                                    mt_tag_predictions=mt_tag_preds,
-                                                   source_tag_mask=source_tag_mask,
-                                                   mt_tag_mask=mt_tag_mask,
+                                                   source_tag_mask=source_tag_masks,
+                                                   mt_tag_mask=mt_tag_masks,
                                                    label_ids=label_ids,
                                                    metrics=metrics)
 
