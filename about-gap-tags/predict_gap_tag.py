@@ -96,14 +96,16 @@ def process_one_pair(src_line, mt_line, src_qe_tags_line, mt_qe_tags_line, align
     #
     ###############################
 
-    # merge the word tags and the gap tags
-    extended_mt_qe_tags = []
-    for i in range(len(mt_tokens)):
-        extended_mt_qe_tags.append(gap_qe_tags[i])
-        extended_mt_qe_tags.append(mt_qe_tags[i])
-    extended_mt_qe_tags.append(gap_qe_tags[-1])
+    return gap_qe_tags
 
-    return extended_mt_qe_tags
+    # merge the word tags and the gap tags
+    # extended_mt_qe_tags = []
+    # for i in range(len(mt_tokens)):
+    #     extended_mt_qe_tags.append(gap_qe_tags[i])
+    #     extended_mt_qe_tags.append(mt_qe_tags[i])
+    # extended_mt_qe_tags.append(gap_qe_tags[-1])
+
+    # return extended_mt_qe_tags
 
 
 def main():
