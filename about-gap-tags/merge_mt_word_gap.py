@@ -8,8 +8,8 @@ def parse_args():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-w', '--word-tag-file', type=Path)
-    parser.add_argument('-t', '--gap-tag-file', type=Path)
+    parser.add_argument('-wt', '--word-tag-file', type=Path)
+    parser.add_argument('-gt', '--gap-tag-file', type=Path)
 
     parser.add_argument('-o', '--output', type=Path)
 

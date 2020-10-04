@@ -760,8 +760,12 @@ def main():
 
         res = []
         for i in sorted(new_tags):
-            c = collections.Counter(new_tags[i])
-            res.append(c.most_common(1)[0][0])
+            if label_to_id['BAD'] in new_tags[i]:
+                res.append(label_to_id['BAD'])
+            else:
+                res.append(label_to_id['OK'])
+            # c = collections.Counter(new_tags[i])
+            # res.append(c.most_common(1)[0][0])
 
         assert len(res) == len(text.split())
         return res
