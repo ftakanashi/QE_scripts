@@ -1,13 +1,26 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
+NOTE = \
+'''
+    Since the workflow of using fast_align to do alignment is complicated, this script consolidates all the steps of
+    that.
+    Specifically, it runs the following commands:
+    paste src tgt | awk -F '\t' '{print $1 " ||| " $2}' > src-tgt
+    fast_align -i src-tgt -d -o -v > forward.align
+    fast_align -i src-tgt -d -o -v -r > reverse.align
+    atools -i forward.align -j reverse.align -c grow-diag-final-and > output
+
+    All the intermediate files are generated and saved in tmp_working_dir  
+'''
+
 import argparse
 import os
 
 from pathlib import Path
 
 def parse_args():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(NOTE)
 
     parser.add_argument('-s', '--src', type=Path,
                         help='Path to the source corpus file.')
@@ -26,7 +39,9 @@ def parse_args():
 
 def run_cmd(cmd):
     print(cmd)
-    os.system(cmd)
+    flag = os.system(cmd)
+    if flag != 0:
+        raise RuntimeError(f'Error occurred runnning\n[{cmd}]')
 
 def main():
     args = parse_args()
