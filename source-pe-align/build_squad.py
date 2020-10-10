@@ -1,20 +1,16 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
-NOTE = \
 '''
-    @author: f.takanashi
-    A script modified from build_squad.py
-    Main difference is that this script support input of QE tags which contains only OK or BAD tags for each word in 
-    source and target corpus.
-    Note that in default settings, target(MT) tags contains those corresponding to GAP. So we extract target tags
-    [1::2] ones as results.
-    
-    Every QE tag will be added into the squad body following key "question".
-    Value of which is "OK" or "BAD".
-    Also note that when generating squad json file for testing purpose, QE tags files may not exist.
-    In that case, you dont need to specify it and leave it as the default value None.
-    When QE tag files are None, a "qe_tag": null K-V pair will be added into the squad json file.
+Nagata san's paper: https://arxiv.org/pdf/2004.14516.pdf
+Input:
+  - source corpus
+  - target corpus
+  - golden alignment label
+Work:
+  build a SQuAD like and JSON-format data file in which each source **token**
+  (currently source span is not considered) annotated in alignment file
+  will be marked and the answer set to be the corresponding target tokens according to the alignment.
 '''
 
 import argparse
@@ -82,19 +78,9 @@ def make_aug_src(src_tokens, query_i):
     return ' '.join(tmp)
 
 
-def process_one_pair(src_line, src_qe_tags_line, tgt_line,
-                     tgt_qe_tags_line, s2t_align, t2s_align, pair_id, opt):
-
+def process_one_pair(src_line, tgt_line, s2t_align, t2s_align, pair_id, opt):
     src_tokens = src_line.split()
-    src_qe_tags = src_qe_tags_line.split()
-    if src_qe_tags_line != '':
-        assert len(src_tokens) == len(src_qe_tags), f'Inconsistent QE tags {src_qe_tags} with corpus {src_tokens}'
-
     tgt_tokens = tgt_line.split()
-    tgt_qe_tags = tgt_qe_tags_line.split()[1::2]
-    if tgt_qe_tags_line != '':
-        assert len(tgt_tokens) == len(tgt_qe_tags), f'Inconsistent QE tags {tgt_qe_tags} with corpus {tgt_tokens}'
-
     s2t_context = tgt_line
     t2s_context = src_line
 
@@ -103,14 +89,12 @@ def process_one_pair(src_line, src_qe_tags_line, tgt_line,
 
     possible_count = impossible_count = 0
 
-    def process_line(from_tokens, from_qe_tags, to_tokens, to_qe_tags, align, res_container, pair_id, id_flag, \
-                     null_dropout):
+    def process_line(from_tokens, to_tokens, align, res_container, pair_id, id_flag, null_dropout):
         impossible_count = possible_count = 0
         for i in range(len(from_tokens)):
             aug = make_aug_src(from_tokens, i)  # insert special tokens to pack a source token
             to_span = align[i]  # a list of target tokens ids which are aligned to the source token. May be an empty
             # one.
-            from_qe_tag = from_qe_tags[i] if len(from_qe_tags) > 0 else None
             if len(to_span) == 0:
                 # if there is no answer
                 if random.random() < null_dropout:
@@ -123,7 +107,6 @@ def process_one_pair(src_line, src_qe_tags_line, tgt_line,
                 res_container.append({
                     'id': f'{pair_id}_{i}_{id_flag}' if id_flag is not None else f'{pair_id}_{i}',
                     'question': aug,
-                    'qe_tag': from_qe_tag,
                     'answers': answers,
                     'is_impossible': is_impossible
                 })
@@ -142,9 +125,8 @@ def process_one_pair(src_line, src_qe_tags_line, tgt_line,
                         }]
                         res_container.append({
                             'id': f'{pair_id}_{i}_{span_id}_{id_flag}' if id_flag is not None else \
-                                f'{pair_id}_{i}_{span_id}',
+                            f'{pair_id}_{i}_{span_id}',
                             'question': aug,
-                            'qe_tag': from_qe_tag,
                             'answers': answers,
                             'is_impossible': is_impossible
                         })
@@ -157,7 +139,6 @@ def process_one_pair(src_line, src_qe_tags_line, tgt_line,
                     res_container.append({
                         'id': f'{pair_id}_{i}_{id_flag}' if id_flag is not None else f'{pair_id}_{i}',
                         'question': aug,
-                        'qe_tag': from_qe_tag,
                         'answers': answers,
                         'is_impossible': is_impossible
                     })
@@ -166,12 +147,12 @@ def process_one_pair(src_line, src_qe_tags_line, tgt_line,
 
     s2t_id_flag = 's2t' if opt.do_t2s else None
     null_dropout = opt.null_dropout
-    p_c, imp_c = process_line(src_tokens, src_qe_tags, tgt_tokens, tgt_qe_tags, s2t_align, s2t_qas, pair_id,
-                              s2t_id_flag, null_dropout)
+    p_c, imp_c = process_line(src_tokens, tgt_tokens, s2t_align, s2t_qas, pair_id, s2t_id_flag,
+                              null_dropout)
     possible_count += p_c
     impossible_count += imp_c
     if opt.do_t2s:
-        p_c, imp_c = process_line(tgt_tokens, tgt_qe_tags, src_tokens, src_qe_tags, t2s_align, t2s_qas, pair_id, 't2s',
+        p_c, imp_c = process_line(tgt_tokens, src_tokens, t2s_align, t2s_qas, pair_id, 't2s',
                                   null_dropout)
         possible_count += p_c
         impossible_count += imp_c
@@ -186,9 +167,9 @@ def process_one_pair(src_line, src_qe_tags_line, tgt_line,
                }, possible_count, impossible_count
     else:
         return {
-                   'context': s2t_context,
-                   'qas': s2t_qas
-               }, possible_count, impossible_count
+            'context': s2t_context,
+            'qas': s2t_qas
+        }, possible_count, impossible_count
 
 
 def reverse_align_lines(align_lines):
@@ -217,20 +198,8 @@ def process(opt):
     with open(opt.src, 'r') as f:
         src_lines = [l.strip() for l in f]
 
-    if opt.src_qe_tags is not None:
-        with open(opt.src_qe_tags, 'r') as f:
-            src_qe_tags_lines = [l.strip() for l in f]
-    else:
-        src_qe_tags_lines = ['' for _ in range(len(src_lines))]
-
     with open(opt.tgt, 'r') as f:
         tgt_lines = [l.strip() for l in f]
-
-    if opt.tgt_qe_tags is not None:
-        with open(opt.tgt_qe_tags, 'r') as f:
-            tgt_qe_tags_lines = [l.strip() for l in f]
-    else:
-        tgt_qe_tags_lines = ['' for _ in range(len(tgt_lines))]
 
     if opt.align is not None:
         with open(opt.align, 'r') as f:
@@ -250,12 +219,10 @@ def process(opt):
     for i, src_line in enumerate(src_lines):
         tgt_line = tgt_lines[i]
         s2t_align = s2t_aligns[i]
-        src_qe_tags_line = src_qe_tags_lines[i]
         t2s_align = t2s_aligns[i]
-        tgt_qe_tags_line = tgt_qe_tags_lines[i]
         if opt.do_t2s:
             s2t_one_pair_res_para, t2s_one_pair_res_para, p_c, imp_c = \
-                process_one_pair(src_line, src_qe_tags_line, tgt_line, tgt_qe_tags_line, s2t_align, t2s_align, i, opt)
+                process_one_pair(src_line, tgt_line, s2t_align, t2s_align, i, opt)
 
             s2t_data = {'paragraphs': [s2t_one_pair_res_para, ]}
             t2s_data = {'paragraphs': [t2s_one_pair_res_para, ]}
@@ -268,7 +235,6 @@ def process(opt):
             data.append(s2t_data)
             data.append(t2s_data)
         else:
-            assert opt.do_t2s, 'Please add do-t2s option. The following code needs maintainance...'
             one_pair_res_para, p_c, imp_c = process_one_pair(src_line, tgt_line, s2t_align, t2s_align, i, opt)
             data.append({'paragraphs': [one_pair_res_para, ]})
 
@@ -277,8 +243,8 @@ def process(opt):
 
     shard_len = len(data) // opt.shards
     for shard_i in range(opt.shards):
-        data_split = data[shard_i * shard_len:(shard_i + 1) * shard_len] if shard_i != opt.shards - 1 else data[
-                                                                                                           shard_i * shard_len:]
+        data_split = data[shard_i*shard_len:(shard_i+1)*shard_len] if shard_i != opt.shards - 1 else data[
+            shard_i*shard_len:]
         res = {
             'version': 'v2.0',
             'data': data_split
@@ -300,18 +266,25 @@ def process(opt):
 
 
 def main():
-    parser = argparse.ArgumentParser(NOTE)
+    parser = argparse.ArgumentParser(
+    '''
+        Nagata san's paper: https://arxiv.org/pdf/2004.14516.pdf
+        Input:
+          - source corpus
+          - target corpus
+          - golden alignment label
+        Work:
+          build a SQuAD like and JSON-format data file in which each source **token**
+          (currently source span is not considered) annotated in alignment file
+          will be marked and the answer set to be the corresponding target tokens according to the alignment.
+    '''
+    )
 
     parser.add_argument('-s', '--src', required=True)
     parser.add_argument('-t', '--tgt', required=True)
     parser.add_argument('-a', '--align', default=None,
                         help='If set to None, it means that the data might be test data without golden tags.')
     parser.add_argument('-o', '--output', required=True)
-
-    parser.add_argument('--src-qe-tags', default=None,
-                        help='Path to the source QE tags.')
-    parser.add_argument('--tgt-qe-tags', default=None,
-                        help='Path to the target QE tags.')
 
     parser.add_argument('--only-sure', action='store_true', default=False)
     parser.add_argument('--do-t2s', action='store_true', default=False)

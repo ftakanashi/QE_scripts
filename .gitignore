@@ -3,5 +3,7 @@ pe-mt-align/WMT20
 pe-mt-align/model
 pe-mt-align/tmp*
 cplex-scripts/tmp*
+source-mt-align/tmp*
+source-pe-align/tmp*
 tmp*
 runs
