@@ -1,6 +1,13 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
+'''
+如果双方OK保持OK
+如果双方BAD，改BAD_REP
+如果没有对应，不管OK还是BAD，改BAD_INS
+如果OK对BAD，保持tag不变，取消alignment
+'''
+
 import argparse
 import collections
 
