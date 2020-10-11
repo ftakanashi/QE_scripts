@@ -66,7 +66,7 @@ def get_align_info(data):
         sent_id, tok_id = int(sent_id), int(tok_id)
         if sent_id not in info:
             info[sent_id] = collections.defaultdict(list)
-        if v[0] == '': continue
+        if v == '' or v[0] == '': continue
         for target_tok_i in range(v[3], v[4] + 1):
             key_name = f'{tok_id}-{target_tok_i}' if flag == 's2t' else f'{target_tok_i}-{tok_id}'
             info[sent_id][key_name].append(v[5])
