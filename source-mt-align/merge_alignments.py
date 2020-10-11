@@ -56,7 +56,7 @@ def process_sp_pm_pair(sp_line, pm_line, args):
         for m in pm_map[p]:
             res.append((s, m))
 
-    res = list(set(res))
+    res = sorted(list(set(res)), key=lambda x:x[0])
     return res
 
 
