@@ -11,9 +11,12 @@ def parse_args():
 
     parser.add_argument('-f', '--files', nargs='+',
                         help='List of files')
-    parser.add_argument('-ln', '--line-num', nargs='+', type=int,
+    parser.add_argument('-ln', '--line_num', nargs='+', type=int,
                         help='Specify the indices of lines to peek.')
-    parser.add_argument('-rs', '--random-sample', type=int,
+    parser.add_argument('-lnf', '--line_num_file', type=Path, default=None,
+                        help='A file contains line numbers splited with comma. The line numbers in the file will be '
+                             'peeked.')
+    parser.add_argument('-rs', '--random_sample', type=int, default=-1,
                         help='Specify the number of lines which will be randomly sampled from files.')
 
     args = parser.parse_args()
@@ -46,8 +49,12 @@ def main():
         assert len(args.line_num) > 0
         sampled_indices = args.line_num
 
-    else:
+    elif args.random_sample > 0:
         sampled_indices = random.sample(range(std_len), args.random_sample)
+
+    elif args.line_num_file is not None:
+        with args.line_num_file.open() as f:
+            sampled_indices = [int(i) for i in f.read().split(',')]
 
     for ln in sorted(sampled_indices):
         print_out(ln, files_lines)
