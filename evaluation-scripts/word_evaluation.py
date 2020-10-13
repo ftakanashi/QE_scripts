@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 from sklearn.metrics import f1_score, recall_score, precision_score
 
+
 def list_of_lists(a_list):
     '''
     check if <a_list> is a list of lists
@@ -18,6 +19,7 @@ def list_of_lists(a_list):
         return True
     return False
 
+
 def flatten(lofl):
     '''
     convert list of lists into a flat list
@@ -26,6 +28,7 @@ def flatten(lofl):
         return [item for sublist in lofl for item in sublist]
     elif type(lofl) == dict:
         return lofl.values()
+
 
 def compute_scores(true_tags, test_tags):
     flat_true = flatten(true_tags)
@@ -63,7 +66,6 @@ def compute_scores(true_tags, test_tags):
 
 
 def parse_args():
-
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--ref-source-tags', type=Path)
@@ -72,16 +74,15 @@ def parse_args():
 
     parser.add_argument('--pred-source-tags', type=Path)
     parser.add_argument('--pred-tags', type=Path)
-    parser.add_argument('--pred-gap-tags', type=Path)
+    parser.add_argument('--pred-gap-tags', type=Path, default=None)
 
-    parser.add_argument('--evaluate-merged-mt', action='store_true',
-                        help='If this option is added, then MT word tags and gap tags will be evaluated together.')
+    # parser.add_argument('--evaluate-merged-mt', action='store_true',
+    #                     help='If this option is added, then MT word tags and gap tags will be evaluated together.')
 
     args = parser.parse_args()
 
-    assert  (args.evaluate_merged_mt) or (args.ref_gap_tags is not None and args.pred_gap_tags is not None)
-
     return args
+
 
 def main():
     args = parse_args()
@@ -95,11 +96,11 @@ def main():
         with Path(fn).open() as f:
             return [[TAG_MAP[t] for t in l.strip().split()] for l in f]
 
-
     # Source
     ref_source_tags = read_tag(args.ref_source_tags)
     pred_source_tags = read_tag(args.pred_source_tags)
-    src_ok_pre, src_ok_rec, src_ok_f1, src_bad_pre, src_bad_rec, src_bad_f1, src_mcc = compute_scores(ref_source_tags, pred_source_tags)
+    src_ok_pre, src_ok_rec, src_ok_f1, src_bad_pre, src_bad_rec, src_bad_f1, src_mcc = compute_scores(ref_source_tags,
+                                                                                                      pred_source_tags)
     # f1_bad_src, f1_good_src, mcc_src = compute_scores(ref_source_tags, pred_source_tags)
     src_f1_multi = src_ok_f1 * src_bad_f1
 
@@ -112,11 +113,11 @@ def main():
     print(f'src_mcc:{src_mcc:.4}')
     print('---')
 
-
     # MT (only word or word&gap)
     ref_mt_tags = read_tag(args.ref_tags)
     pred_mt_tags = read_tag(args.pred_tags)
-    mt_ok_pre, mt_ok_rec, mt_ok_f1, mt_bad_pre, mt_bad_rec, mt_bad_f1, mt_mcc = compute_scores(ref_mt_tags, pred_mt_tags)
+    mt_ok_pre, mt_ok_rec, mt_ok_f1, mt_bad_pre, mt_bad_rec, mt_bad_f1, mt_mcc = compute_scores(ref_mt_tags,
+                                                                                               pred_mt_tags)
     mt_f1_multi = mt_ok_f1 * mt_bad_f1
 
     print(f'mt_ok_precision: {mt_ok_pre:.4}')
@@ -129,10 +130,11 @@ def main():
     print('---')
 
     # GAP
-    if not args.evaluate_merged_mt:
+    if args.ref_gap_tags is not None and args.pred_gap_tags is not None:
         ref_gap_tags = read_tag(args.ref_gap_tags)
         pred_gap_tags = read_tag(args.pred_gap_tags)
-        gap_ok_pre, gap_ok_rec, gap_ok_f1, gap_bad_pre, gap_bad_rec, gap_bad_f1, gap_mcc = compute_scores(ref_gap_tags, pred_gap_tags)
+        gap_ok_pre, gap_ok_rec, gap_ok_f1, gap_bad_pre, gap_bad_rec, gap_bad_f1, gap_mcc = compute_scores(ref_gap_tags,
+                                                                                                          pred_gap_tags)
         gap_f1_multi = gap_ok_f1 * gap_bad_f1
 
         print(f'gap_ok_precision: {gap_ok_pre:.4}')
