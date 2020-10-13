@@ -56,6 +56,9 @@ def main():
         with args.line_num_file.open() as f:
             sampled_indices = [int(i) for i in f.read().split(',')]
 
+    else:
+        raise RuntimeError('You must specify at least one option among -ln -rs -lnf')
+
     for ln in sorted(sampled_indices):
         print_out(ln, files_lines)
 
