@@ -2,45 +2,20 @@
 # -*- coding:utf-8 -*-
 
 '''
-如果双方OK保持OK
-如果双方BAD，改REP
-如果没有对应，如果是BAD，改INS
-如果OK对BAD，保持tag不变，删除alignment
+    This script implements mainly two functions.
+    1. Modify the bad tags into fine-grained tags like replace tags, insert tags, delete tags, etc.
+    2. Dropout the mis-match alignments which means two words in the alignment has opposite tags like OK-BAD.
 '''
 
 import argparse
 import collections
 import copy
 import os
-import warnings
 
 from pathlib import Path
 
 OK_LABELS = ['OK']
-BAD_LABELS = ['BAD', 'REP', 'INS']
-
-
-class Tag(object):
-    OK_LABELS = ['OK']
-    BAD_LABELS = ['BAD', 'REP', 'INS']
-
-    def __init__(self, label):
-        assert label in self.OK_LABELS or label in self.BAD_LABELS
-        self.label = label
-        if label in self.OK_LABELS:
-            self.type = 0
-        else:
-            self.type = 1
-
-    def setLabel(self, label):
-        if label in self.OK_LABELS:
-            assert self.type == 0, 'You are changing OK tag to bad ones.'
-            self.label = label
-        elif label in self.BAD_LABELS:
-            assert self.type == 1, 'You are changing bad tags to OK.'
-            self.label = label
-        else:
-            raise ValueError(f'Invalid label {label}')
+BAD_LABELS = ['BAD', 'REP', 'INS', 'DEL']
 
 
 def parse_args():
@@ -84,13 +59,15 @@ def reverse_align_dict(align_dict):
 
 
 def modify_tags_and_aligns(source_tags, mt_tags, align_dict, reversed_align_dict):
+    # the source word is not translated, thus INSERT is required
     for from_i, source_tag in enumerate(source_tags):
         if len(align_dict[from_i]) == 0 and source_tag == 'BAD':
             source_tags[from_i] = 'INS'
 
+    # the MT word is redundant, thus DELETE is required
     for to_j, mt_tag in enumerate(mt_tags):
         if len(reversed_align_dict[to_j]) == 0 and mt_tag == 'BAD':
-            mt_tags[to_j] = 'INS'
+            mt_tags[to_j] = 'DEL'
 
     for from_i, source_tag in enumerate(source_tags):
         dummy_to_js = copy.deepcopy(align_dict[from_i])
@@ -108,12 +85,14 @@ def modify_tags_and_aligns(source_tags, mt_tags, align_dict, reversed_align_dict
                 align_dict[from_i].remove(to_j)
                 reversed_align_dict[to_j].remove(from_i)
                 if len(reversed_align_dict[to_j]) == 0:
-                    mt_tags[to_j] = 'INS'
+                    # when there is no available alignment rest for this MT word
+                    mt_tags[to_j] = 'DEL'
 
             elif (source_tag in BAD_LABELS and mt_tag == 'OK'):
                 align_dict[from_i].remove(to_j)
                 reversed_align_dict[to_j].remove(from_i)
                 if len(align_dict[from_i]) == 0:
+                    # when there is no available alignment rest for this source word
                     source_tags[from_i] = 'INS'
 
             else:
