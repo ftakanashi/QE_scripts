@@ -76,9 +76,9 @@ def operate(args, src_tokens, tgt_tokens, aligns, src_tags, tgt_tags):
         elif operation == 'drop_align':
             align_dict = get_align_dict(aligns)
             rev_align_dict = get_align_dict(aligns, reverse=True)
-            if len(align_dict[i]) == 0:
+            if len(align_dict[i]) == 1:
                 src_tags[i] = 'BAD'
-            if len(rev_align_dict[j]) == 0:
+            if len(rev_align_dict[j]) == 1:
                 tgt_tags[j] = 'BAD'
             flag = False
 
