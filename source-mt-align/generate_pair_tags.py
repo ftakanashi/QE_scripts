@@ -62,9 +62,9 @@ def generate_pair_tags(align_line, src_tags_line, tgt_tags_line):
         src_pair_tags.append(pair_tag)
 
     for j, tgt_tag in enumerate(tgt_tags):
-        pair_tags = [f'{tgt_tag}-{src_tags[i]}' for i in rev_align_dict[j]]
+        pair_tags = [f'{src_tags[i]}-{tgt_tag}' for i in rev_align_dict[j]]
         if len(pair_tags) == 0:
-            pair_tag = f'{tgt_tag}-NULL'
+            pair_tag = f'NULL-{tgt_tag}'
         else:
             pt_counter = collections.Counter(pair_tags)
             pair_tag = pt_counter.most_common()[0][0]
