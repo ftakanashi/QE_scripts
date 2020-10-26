@@ -89,8 +89,8 @@ def main():
     src_tags_lines = read_fn(args.source_tags)
     tgt_tags_lines = read_fn(args.target_tags)
 
-    wf_src = Path(wf_fn(args.source_tags)).open('w')
-    wf_tgt = Path(wf_fn(args.target_tags)).open('w')
+    wf_src = Path(wf_fn(args.source_tags.name)).open('w')
+    wf_tgt = Path(wf_fn(args.target_tags.name)).open('w')
     for align_line, src_tags_line, tgt_tags_line in zip(align_lines, src_tags_lines, tgt_tags_lines):
         src_pair_tags, tgt_pair_tags = generate_pair_tags(align_line, src_tags_line, tgt_tags_line)
         wf_src.write(' '.join(src_pair_tags))
