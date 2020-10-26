@@ -11,6 +11,7 @@ import os
 
 from pathlib import Path
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
 
@@ -28,6 +29,7 @@ def parse_args():
 
     return args
 
+
 def get_align_dict(aligns, reverse=False):
     if type(aligns) is str:
         aligns = aligns.split()
@@ -42,8 +44,8 @@ def get_align_dict(aligns, reverse=False):
 
     return d
 
-def generate_pair_tags(align_line, src_tags_line, tgt_tags_line):
 
+def generate_pair_tags(align_line, src_tags_line, tgt_tags_line):
     align_dict = get_align_dict(align_line)
     rev_align_dict = get_align_dict(align_line, reverse=True)
     src_tags = src_tags_line.split()
@@ -71,9 +73,6 @@ def generate_pair_tags(align_line, src_tags_line, tgt_tags_line):
     return src_pair_tags, tgt_pair_tags
 
 
-
-
-
 def main():
     args = parse_args()
 
@@ -89,12 +88,15 @@ def main():
     src_tags_lines = read_fn(args.source_tags)
     tgt_tags_lines = read_fn(args.target_tags)
 
+    assert len(align_lines) == len(src_tags_lines) == len(tgt_tags_lines)
+
     wf_src = Path(wf_fn(args.source_tags.name)).open('w')
     wf_tgt = Path(wf_fn(args.target_tags.name)).open('w')
     for align_line, src_tags_line, tgt_tags_line in zip(align_lines, src_tags_lines, tgt_tags_lines):
         src_pair_tags, tgt_pair_tags = generate_pair_tags(align_line, src_tags_line, tgt_tags_line)
-        wf_src.write(' '.join(src_pair_tags))
-        wf_tgt.write(' '.join(tgt_pair_tags))
+        wf_src.write(' '.join(src_pair_tags) + '\n')
+        wf_tgt.write(' '.join(tgt_pair_tags) + '\n')
+
 
 if __name__ == '__main__':
     main()
