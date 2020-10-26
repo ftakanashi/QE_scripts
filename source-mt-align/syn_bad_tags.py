@@ -1,6 +1,13 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
+NOTE = \
+'''
+    modify some OK tags into BAD according to alignment.
+    note that original words in target will also be modified.
+    THIS SCRIPT IS STILL UNDER DEVELOPING.
+'''
+
 import argparse
 import collections
 import os
