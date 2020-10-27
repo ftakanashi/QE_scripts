@@ -68,13 +68,13 @@ def compute_scores(true_tags, test_tags):
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--ref_source_tags', type=Path)
-    parser.add_argument('--ref_tags', type=Path)
-    parser.add_argument('--ref_gap_tags', type=Path, default=None)
+    parser.add_argument('-rst', '--ref_source_tags', type=Path)
+    parser.add_argument('-rt', '--ref_tags', type=Path)
+    parser.add_argument('-rgt', '--ref_gap_tags', type=Path, default=None)
 
-    parser.add_argument('--pred_source_tags', type=Path)
-    parser.add_argument('--pred_tags', type=Path)
-    parser.add_argument('--pred_gap_tags', type=Path, default=None)
+    parser.add_argument('-pst', '--pred_source_tags', type=Path)
+    parser.add_argument('-pt', '--pred_tags', type=Path)
+    parser.add_argument('-pgt', '--pred_gap_tags', type=Path, default=None)
 
     # parser.add_argument('--evaluate-merged-mt', action='store_true',
     #                     help='If this option is added, then MT word tags and gap tags will be evaluated together.')
