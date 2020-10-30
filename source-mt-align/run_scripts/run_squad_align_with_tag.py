@@ -32,6 +32,11 @@ NOTE = \
     --max_answer_length 15
     --overwrite_output_dir --overwrite_cache
     
+    Some newly added arguments:
+    --valid_tags FILE
+    --tag_binary_regression
+    --freeze_base_during_training
+    
 '''
 
 import argparse
@@ -107,7 +112,7 @@ from typing import Tuple, Optional
 
 from transformers.modeling_bert import BertPreTrainedModel, BertModel
 from transformers.file_utils import ModelOutput
-from torch.nn.modules.loss import CrossEntropyLoss
+from torch.nn.modules.loss import CrossEntropyLoss, BCELoss
 
 
 class PsdalignSquadProcessor(SquadV2Processor):
@@ -207,9 +212,19 @@ class BertForAlignWithTagPrediction(BertPreTrainedModel):
         self.bert = BertModel(config)
         self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)    # num_labels is for QA
 
+        self.tag_binary_regression = config.tag_binary_regression
         self.tag_map = config.tag_map
-        num_tags = len(config.tag_map.values()) - 1    # exclude None
-        self.tag_outputs = nn.Linear(config.hidden_size, num_tags)
+        if self.tag_binary_regression:
+            assert self.tag_map == {'OK': 0, 'BAD': 1, 'None': -1}, 'if tag_binary_regression is specified, ' \
+                                                                    'make sure that the valid tags only contains OK ' \
+                                                                    'and BAD.'
+            self.tag_outputs = nn.Sequential(
+                nn.Linear(config.hidden_size, 1),
+                nn.Sigmoid()
+            )
+        else:
+            num_tags = len(config.tag_map.values()) - 1    # exclude None
+            self.tag_outputs = nn.Linear(config.hidden_size, num_tags)
 
         self.init_weights()
 
@@ -279,7 +294,10 @@ class BertForAlignWithTagPrediction(BertPreTrainedModel):
 
         tag_logits = self.tag_outputs(cls_output)
         if tags is not None:
-            tag_loss = CrossEntropyLoss()(tag_logits, tags)
+            if self.tag_binary_regression:
+                tag_loss = BCELoss()(tag_logits.view(-1), tags.type(torch.float))
+            else:
+                tag_loss = CrossEntropyLoss()(tag_logits, tags)
             total_loss += tag_loss
 
         if not return_dict:
@@ -459,6 +477,7 @@ def _compute_softmax(scores):
 
 
 def compute_predictions_logits(
+        args,
         all_examples,
         all_features,
         all_results,
@@ -490,15 +509,6 @@ def compute_predictions_logits(
     for result in all_results:
         unique_id_to_result[result.unique_id] = result
 
-    #################################
-    #   @wyzypa 20201009
-    #   id_to_tag reverse_tag_map
-    #################################
-    reverse_tag_map = {i: t for t, i in tag_map.items()}
-    #################################
-    #   @wyzypa End
-    #################################
-
     _PrelimPrediction = collections.namedtuple(  # pylint: disable=invalid-name
         "PrelimPrediction", ["feature_index", "start_index", "end_index", "start_logit", "end_logit", "tag"]
     )
@@ -521,7 +531,10 @@ def compute_predictions_logits(
             result = unique_id_to_result[feature.unique_id]
             start_indexes = _get_best_indexes(result.start_logits, n_best_size)
             end_indexes = _get_best_indexes(result.end_logits, n_best_size)
-            tag = _get_best_indexes(result.tag_logits, 1)[0]  # get tag prediction for this sample
+            if args.tag_binary_regression:
+                tag = result.tag_logits[0]
+            else:
+                tag = _get_best_indexes(result.tag_logits, 1)[0]  # get tag prediction for this sample
             # if we could have irrelevant answers, get the min score of irrelevant
             if version_2_with_negative:
                 feature_null_score = result.start_logits[0] + result.end_logits[0]
@@ -577,6 +590,9 @@ def compute_predictions_logits(
         prelim_predictions = sorted(prelim_predictions, key=lambda x: (x.start_logit + x.end_logit), reverse=True)
 
         class _NbestPrediction(object):
+
+            reverse_tag_map = {i: t for t, i in tag_map.items()}
+
             def __init__(self, text, start_logit, end_logit, start_index, end_index, probability, tag):
                 self.text = text
                 self.start_logit = start_logit
@@ -584,7 +600,11 @@ def compute_predictions_logits(
                 self.start_index = start_index
                 self.end_index = end_index
                 self.probability = probability
-                self.tag = tag
+                if args.tag_binary_regression:
+                    self.tag = tag
+                else:
+                    self.tag = self.reverse_tag_map[tag]
+
 
         seen_predictions = {}
         nbest = []
@@ -623,24 +643,24 @@ def compute_predictions_logits(
 
             nbest.append(_NbestPrediction(text=final_text, start_logit=pred.start_logit, end_logit=pred.end_logit,
                                           start_index=orig_doc_start, end_index=orig_doc_end, probability=0.0,
-                                          tag=reverse_tag_map[pred.tag]))
+                                          tag=pred.tag))
         # if we didn't include the empty option in the n-best, include it
         if version_2_with_negative:
             if "" not in seen_predictions:
                 nbest.append(_NbestPrediction(text="", start_logit=null_start_logit, end_logit=null_end_logit,
-                                              start_index=-1, end_index=-1, probability=0.0, tag=reverse_tag_map[tag]))
+                                              start_index=-1, end_index=-1, probability=0.0, tag=tag))
 
             # In very rare edge cases we could only have single null prediction.
             # So we just create a nonce prediction in this case to avoid failure.
             if len(nbest) == 1:
                 nbest.insert(0, _NbestPrediction(text="empty", start_logit=0.0, end_logit=0.0,
-                                                 start_index=-1, end_index=-1, probability=0.0, tag=reverse_tag_map[-1]))
+                                                 start_index=-1, end_index=-1, probability=0.0, tag=-1))
 
         # In very rare edge cases we could have no valid predictions. So we
         # just create a nonce prediction in this case to avoid failure.
         if not nbest:
             nbest.append(_NbestPrediction(text="empty", start_logit=0.0, end_logit=0.0,
-                                          start_index=-1, end_index=-1, probability=0.0, tag=reverse_tag_map[-1]))
+                                          start_index=-1, end_index=-1, probability=0.0, tag=-1))
 
         assert len(nbest) >= 1, "No valid predictions"
 
@@ -1380,6 +1400,22 @@ def train(args, train_dataset, model, tokenizer):
             model, device_ids=[args.local_rank], output_device=args.local_rank, find_unused_parameters=True
         )
 
+
+    '''
+    ==========================================================================================
+      @wyzypa
+      20201030 freeze the base model parameters if the --freeze_base_during_training flag is set
+    ==========================================================================================
+    '''
+    if args.freeze_base_during_training:
+        for param in model.base_model.parameters():
+            param.requires_grad = False
+    '''
+    ==========================================================================================
+      @wyzypa End
+    ==========================================================================================
+    '''
+
     # Train!
     logger.info("***** Running training *****")
     logger.info("  Num examples = %d", len(train_dataset))
@@ -1636,6 +1672,7 @@ def evaluate(args, model, tokenizer, prefix=""):
         )
     else:
         predictions = compute_predictions_logits(
+            args,
             examples,
             features,
             all_results,
@@ -1764,20 +1801,6 @@ def main():
         help="The input evaluation file. If a data dir is specified, will look for the file there"
              + "If no data dir or train/predict files are specified, will run with tensorflow_datasets.",
     )
-
-    ############################
-    #   @wyzypa 20201008
-    #   arg for valid tag file
-    ############################
-    parser.add_argument(
-        "--valid_tags",
-        default=None,
-        type=str,
-        help="Path to a file specifying the valid tags."
-    )
-    ###########################
-    #   @wyzypa End
-    ###########################
 
     parser.add_argument(
         "--config_name", default="", type=str, help="Pretrained config name or path if not the same as model_name"
@@ -1919,6 +1942,40 @@ def main():
     parser.add_argument("--server_port", type=str, default="", help="Can be used for distant debugging.")
 
     parser.add_argument("--threads", type=int, default=1, help="multiple threads for converting example to features")
+
+    '''
+    ==========================================================================================
+      @wyzypa
+      20201008 arg for valid tag file
+      20201030 arg for freezing the base model
+    ==========================================================================================
+    '''
+    parser.add_argument(
+        "--valid_tags",
+        default=None,
+        type=str,
+        help="Path to a file specifying the valid tags."
+    )
+
+    parser.add_argument(
+        '--tag_binary_regression',
+        action='store_true',
+        help='Change the tag prediction task from 2-class classification to logistic regression. If the flag is '
+             'added, tag_map generated from --valid_tags must be {OK: 0, BAD: 1} since logistic regression can only '
+             'handle 0,1 classification problems.'
+    )
+
+    parser.add_argument(
+        '--freeze_base_during_training',
+        action='store_true',
+        help='Whether to freeze the parameters in base model during training.'
+    )
+    '''
+    ==========================================================================================
+      @wyzypa End
+    ==========================================================================================
+    '''
+
     args = parser.parse_args()
 
     if args.doc_stride >= args.max_seq_length - args.max_query_length:
@@ -1994,12 +2051,13 @@ def main():
         cache_dir=args.cache_dir if args.cache_dir else None,
     )
 
-    # set tag_map in configuration
-    ############################################
-    #   @wyzypa 20201009
-    #   readin valid tags and build tag_map
-    #   save it into configuration and args for future usage
-    ############################################
+    '''
+    ================================================================================================
+      @wyzypa
+      20201009 read in valid tags and build tag_map and save it into configuration and args for future usage
+      20201030 set the flag --tag_binary_regression to configuration object
+    ================================================================================================
+    '''
     if not hasattr(config, 'tag_map'):
         assert args.valid_tags is not None, 'Tag configuration not found. Please specify --valid_tags.'
         with open(args.valid_tags, 'r', encoding='utf-8') as f:
@@ -2013,9 +2071,14 @@ def main():
         args.tag_map = config.tag_map = tag_map
     else:
         args.tag_map = config.tag_map
-    ############################################
-    #   @wyzypa End
-    ############################################
+
+    config.tag_binary_regression = args.tag_binary_regression
+
+    '''
+    ================================================================================================
+      @wyzypa End
+    ================================================================================================
+    '''
 
     model = BertForAlignWithTagPrediction.from_pretrained(
         args.model_name_or_path,

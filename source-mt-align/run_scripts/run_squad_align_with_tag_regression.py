@@ -3,6 +3,8 @@
 
 NOTE = \
     '''
+        !!! DEPRECATED !!!
+    
         This script can run QA in Bert settings (especially for alignment).
         Meanwhile, a tag prediction can be performed by exploiting the [CLS]'s output. Formally, for every QA pair in the input data,
         there should be a tag. The tag label should be given during training and will be predicted during testing. 
@@ -1836,6 +1838,21 @@ def main():
     )
     parser.add_argument("--do_train", action="store_true", help="Whether to run training.")
     parser.add_argument("--do_eval", action="store_true", help="Whether to run eval on the dev set.")
+
+    ############################
+    #
+    # @wyzypa 20201030
+    # arg for freeze bert parameter
+    ############################
+    parser.add_argument('--freeze_base_during_training', acition="store_true", help="Whether to freeze the parameters "
+                                                                                  "in base model while training.")
+
+    ############################
+    #
+    # @wyzypa End
+    #
+    ############################
+
     parser.add_argument(
         "--evaluate_during_training", action="store_true", help="Run evaluation during training at each logging step."
     )
