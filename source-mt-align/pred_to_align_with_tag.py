@@ -37,7 +37,11 @@ def parse_args():
     parser.add_argument('-tto', '--tgt_tags_output', default=None,
                         help='Path to the output Target QE tag file.')
 
-    parser.add_argument('--prob_threshold', type=float, default=0.4)
+    parser.add_argument('--align_prob_threshold', type=float, default=0.4)
+    parser.add_argument('--tag_prob_threshold', type=float, default=0.5,
+                        help='If the output is probability which indicates a tag tends to be OK(0) or BAD(1), '
+                             'this threshold will determine the tag. Note that only effective in 2-class '
+                             'classification.')
 
     args = parser.parse_args()
 
@@ -94,13 +98,13 @@ def process_one_line(sent_align_info, opt):
         for j in range(max_tgt_length):
             probs = sent_align_info[f'{i}-{j}']
             assert len(probs) <= 2
-            if sum(probs) / 2 > opt.prob_threshold:    # symmetrization
+            if sum(probs) / 2 > opt.align_prob_threshold:    # symmetrization
                 valid_aligns.append(f'{i}-{j}')
 
     return valid_aligns
 
 
-def get_tag_info(data):
+def get_tag_info(data, args):
     src_info = collections.defaultdict(dict)
     tgt_info = collections.defaultdict(dict)
     for k in data:
@@ -114,7 +118,19 @@ def get_tag_info(data):
         else:
             raise ValueError(f'Invalid direction {dirc}')
 
-        info[sent_id][word_id] = v[1 if v[0] == '' else 6]
+        # info[sent_id][word_id] = v[1 if v[0] == '' else 6]
+        dummy = v[1 if v[0] == '' else 6]
+        try:
+            prob = float(dummy)
+            if prob > args.tag_prob_threshold:    # only effective in OK/BAD 2-class classification
+                tag = 'BAD'
+            else:
+                tag = 'OK'
+
+        except Exception as e:
+            tag = dummy
+
+        info[sent_id][word_id] = tag
 
     return src_info, tgt_info
 
@@ -135,7 +151,7 @@ def main():
 
     # extract QE tag information
     if args.src_tags_output and args.tgt_tags_output:
-        src_tag_info, tgt_tag_info = get_tag_info(data)
+        src_tag_info, tgt_tag_info = get_tag_info(data, args)
         wf = open(args.src_tags_output, 'w')
         for sent_id in tqdm(sorted(src_tag_info), mininterval=1.0, ncols=50, desc='Extracting Source QE Tag Information'):
             wf.write(' '.join([src_tag_info[sent_id][word_id] for word_id in sorted(src_tag_info[sent_id])]) + '\n')
