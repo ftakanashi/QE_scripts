@@ -24,7 +24,7 @@ NOTE = \
     A typical composition of arguments is like this:
     --model_type bert --model_name_or_path model --do_train --source_text xxx --mt_text xxx --source_qe_tags xxx 
     --mt_qe_tags xxx --learning_rate 3e-5 --max_seq_length 384 --output_dir output --cache_dir output 
-    --per_device_train_batch_size 8 --save_steps 10000 --num_train_epochs 5.0 --overwrite_cache --overwrite_output_dir
+    --save_steps 1000 --num_train_epochs 5.0 --overwrite_cache --overwrite_output_dir
     
     Some newly added arguments are:
     --source_text FILE
@@ -32,6 +32,7 @@ NOTE = \
     --source_qe_tags FILE    [only required in training]
     --mt_qe_tags FILE    [only required in training]
     --use_crf_topping
+    --crf_learning_rate FLOAT
 '''
 
 
@@ -308,6 +309,7 @@ from torch.nn.modules.loss import CrossEntropyLoss
 from transformers.modeling_bert import BertModel, BertPreTrainedModel, BertEmbeddings, BertEncoder, BertPooler
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.trainer import Trainer
+from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 from tqdm import tqdm
 from typing import Union, Any, NamedTuple, List, Tuple, Optional
 
@@ -689,7 +691,8 @@ class ConditionalRandomField(torch.nn.Module):
         """
 
         if mask is None:
-            mask = torch.ones(*tags.size(), dtype=torch.bool)
+            mask = torch.ones_like(tags).type(torch.bool)
+            # mask = torch.ones(*tags.size(), dtype=torch.bool)
         else:
             # The code below fails in weird ways if this isn't a bool tensor, so we make sure.
             mask = mask.to(torch.bool)
@@ -950,6 +953,67 @@ class QETagClassificationTrainer(Trainer):
             labels = labels.detach()
         return (loss, source_tag_logits, mt_tag_logits, source_tag_mask, mt_tag_mask, labels)
 
+    def create_optimizer_and_scheduler(self, num_training_steps: int):
+        '''
+        copied and modified from Trainer.create_optimizer_and_scheduler
+        '''
+        if self.optimizer is None:
+
+            no_decay = ["bias", "LayerNorm.weight"]
+
+            if hasattr(self.model, 'source_qe_tag_crf'):
+                bert_and_classifier_parameters = list(self.model.bert.named_parameters()) + \
+                                                 list(self.model.source_qe_tag_outputs.named_parameters()) + \
+                                                 list(self.model.mt_qe_tag_outputs.named_parameters())
+
+                crf_parameters = list(self.model.source_qe_tag_crf.named_parameters()) + \
+                                 list(self.model.mt_qe_tag_crf.named_parameters())
+
+                optimizer_grouped_parameters = [
+                    {
+                        "params": [p for n, p in bert_and_classifier_parameters if not any(nd in n for nd in no_decay)],
+                        "weight_decay": self.args.weight_decay,
+                        "lr": self.args.learning_rate
+                    },
+                    {
+                        "params": [p for n, p in bert_and_classifier_parameters if any(nd in n for nd in no_decay)],
+                        "weight_decay": 0.0,
+                        "lr": self.args.learning_rate
+                    },
+
+                    {
+                        "params": [p for n, p in crf_parameters if not any(nd in n for nd in no_decay)],
+                        "weight_decay": self.args.weight_decay,
+                        "lr": self.args.crf_learning_rate
+                    },
+                    {
+                        "params": [p for n, p in crf_parameters if any(nd in n for nd in no_decay)],
+                        "weight_decay": 0.0,
+                        "lr": self.args.crf_learning_rate
+                    },
+                ]
+            else:
+                optimizer_grouped_parameters = [
+                    {
+                        "params": [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
+                        "weight_decay": self.args.weight_decay,
+                    },
+                    {
+                        "params": [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)],
+                        "weight_decay": 0.0,
+                    },
+                ]
+            self.optimizer = AdamW(
+                optimizer_grouped_parameters,
+                lr=self.args.learning_rate,
+                betas=(self.args.adam_beta1, self.args.adam_beta2),
+                eps=self.args.adam_epsilon,
+            )
+        if self.lr_scheduler is None:
+            self.lr_scheduler = get_linear_schedule_with_warmup(
+                self.optimizer, num_warmup_steps=self.args.warmup_steps, num_training_steps=num_training_steps
+            )
+
 
 class BertModelWithQETag(BertPreTrainedModel):
     '''
@@ -1166,11 +1230,17 @@ class ModelArguments:
     ========================================================================================
       @wyzypa
       20201031 add argument for CRF
+      20201102 add argument for regression
     ========================================================================================
     '''
     use_crf_topping: bool = field(
-        default=None,
+        default=False,
         metadata={"help": "Set this flag to add CRF layers upon base bert rather than Linear Layers."}
+    )
+    tag_binary_regression: bool = field(
+        default=False,
+        metadata={"help": "Set this flag to change the classification for top layers to regression (probability "
+                          "prediction). Note that only effective in 2-class tag classification."}
     )
     '''
     ========================================================================================
@@ -1210,6 +1280,22 @@ class DataTrainingArguments:
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
 
+    '''
+    ================================================================================
+      @wyzypa
+      20201103 add crf_learning_rate
+    ================================================================================
+    '''
+    crf_learning_rate: float = field(
+        default=1e-3,
+        metadata={"help": "Learning rate for CRF topping layer. Only effective when --use_crf_topping is specified."}
+    )
+    '''
+    ================================================================================
+      @wyzypa End.
+    ================================================================================
+    '''
+
 
 def main():
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
@@ -1247,10 +1333,12 @@ def main():
         label2id={label: i for i, label in enumerate(labels)},
         cache_dir=model_args.cache_dir,
     )
+
     '''
     =================================================================================
       @wyzypa
       20201031 add extra arguments into config object
+      20201102 tag_binary_regression included
     =================================================================================
     '''
     if not hasattr(config, 'use_crf_topping'):
@@ -1260,11 +1348,19 @@ def main():
     else:
         assert model_args.use_crf_topping is False, 'Please DO NOT specify --use_crf_topping since your model ' \
                                                     'explicitly rejected CRF topping layers.'
+
+    training_args.crf_learning_rate = data_args.crf_learning_rate
+    delattr(data_args, 'crf_learning_rate')
+
+    if not hasattr(config, 'tag_binary_regression'):
+        config.tag_binary_regression = model_args.tag_binary_regression
+
     '''
     =================================================================================
       @wyzypa End.
     =================================================================================
     '''
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         do_lower_case=data_args.do_lower_case,
