@@ -305,7 +305,7 @@ import torch
 import warnings
 from torch import nn
 from torch.utils.data import DataLoader
-from torch.nn.modules.loss import CrossEntropyLoss
+from torch.nn.modules.loss import CrossEntropyLoss, BCELoss
 from transformers.modeling_bert import BertModel, BertPreTrainedModel, BertEmbeddings, BertEncoder, BertPooler
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.trainer import Trainer
@@ -1114,8 +1114,19 @@ class BertForQETagClassification(BertPreTrainedModel):
 
         self.bert = BertModelWithQETag(config)
 
-        self.source_qe_tag_outputs = nn.Linear(config.hidden_size, 2)  # OK or BAD
-        self.mt_qe_tag_outputs = nn.Linear(config.hidden_size, 2)  # OK or BAD
+        self.tag_binary_regression = config.tag_binary_regression
+        if config.tag_binary_regression:
+            self.source_qe_tag_outputs = nn.Sequential(
+                nn.Linear(config.hidden_size, 1),
+                nn.Sigmoid()
+            )
+            self.mt_qe_tag_outputs = nn.Sequential(
+                nn.Linear(config.hidden_size, 1),
+                nn.Sigmoid()
+            )
+        else:
+            self.source_qe_tag_outputs = nn.Linear(config.hidden_size, 2)  # OK or BAD
+            self.mt_qe_tag_outputs = nn.Linear(config.hidden_size, 2)  # OK or BAD
 
         self.use_crf_topping = config.use_crf_topping
         if config.use_crf_topping:
@@ -1146,7 +1157,13 @@ class BertForQETagClassification(BertPreTrainedModel):
         total_loss = None
         source_tag_logits = self.source_qe_tag_outputs(sequence_output)
         mt_tag_logits = self.mt_qe_tag_outputs(sequence_output)
+
         if self.use_crf_topping:
+
+            if self.tag_binary_regression:
+                # need to transfer probs to logits
+                source_tag_logits = torch.cat((1 - source_tag_logits, source_tag_logits), dim=-1)
+                mt_tag_logits = torch.cat((1 - mt_tag_logits, mt_tag_logits), dim=-1)
 
             best_source_tags = self.source_qe_tag_crf.viterbi_tags(source_tag_logits, source_tag_masks, top_k=1)
             best_mt_tags = self.mt_qe_tag_crf.viterbi_tags(mt_tag_logits, mt_tag_masks, top_k=1)
@@ -1178,15 +1195,21 @@ class BertForQETagClassification(BertPreTrainedModel):
         else:
 
             if tag_labels is not None:
-                loss_fct = CrossEntropyLoss()
 
-                source_active_tag_labels = torch.where(source_tag_masks.view(-1), tag_labels.view(-1),
+                if self.tag_binary_regression:
+                    source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 1.0)
+                    mt_active_logits = mt_tag_logits.squeeze(-1).masked_fill(~mt_tag_masks, 1.0)
+                    source_tag_loss = BCELoss()(source_active_logits, tag_labels.type(torch.float))
+                    mt_tag_loss = BCELoss()(mt_active_logits, tag_labels.type(torch.float))
+
+                else:
+                    loss_fct = CrossEntropyLoss()
+                    source_active_tag_labels = torch.where(source_tag_masks.view(-1), tag_labels.view(-1),
+                                                           torch.tensor(loss_fct.ignore_index).type_as(tag_labels))
+                    mt_active_tag_labels = torch.where(mt_tag_masks.view(-1), tag_labels.view(-1),
                                                        torch.tensor(loss_fct.ignore_index).type_as(tag_labels))
-                source_tag_loss = loss_fct(source_tag_logits.view(-1, 2), source_active_tag_labels)
-
-                mt_active_tag_labels = torch.where(mt_tag_masks.view(-1), tag_labels.view(-1),
-                                                   torch.tensor(loss_fct.ignore_index).type_as(tag_labels))
-                mt_tag_loss = loss_fct(mt_tag_logits.view(-1, 2), mt_active_tag_labels)
+                    source_tag_loss = loss_fct(source_tag_logits.view(-1, 2), source_active_tag_labels)
+                    mt_tag_loss = loss_fct(mt_tag_logits.view(-1, 2), mt_active_tag_labels)
 
                 total_loss = source_tag_loss + mt_tag_loss
 
@@ -1284,11 +1307,16 @@ class DataTrainingArguments:
     ================================================================================
       @wyzypa
       20201103 add crf_learning_rate
+      20201104 add tag_prob_threshold
     ================================================================================
     '''
     crf_learning_rate: float = field(
         default=1e-3,
         metadata={"help": "Learning rate for CRF topping layer. Only effective when --use_crf_topping is specified."}
+    )
+    tag_prob_threshold: float = field(
+        default=0.5,
+        metadata={"help": "The threshold for predicting tag in regression mode. Only effective during prediction when --tag_binary_regression is specified."}
     )
     '''
     ================================================================================
@@ -1387,7 +1415,10 @@ def main():
     )
 
     def align_predictions(predictions: np.ndarray, mask: torch.Tensor) -> List[List[str]]:
-        preds = np.argmax(predictions, axis=2)
+        if predictions.shape[-1] > 1:
+            preds = np.argmax(predictions, axis=2)
+        else:
+            preds = predictions.squeeze(-1)
         batch_size, max_len = preds.shape
         res = [[] for _ in range(batch_size)]
 
@@ -1411,9 +1442,15 @@ def main():
             new_tags[pieced_to_origin_map[i]].append(tag)
 
         res = []
-        for i in sorted(new_tags):
-            c = collections.Counter(new_tags[i])
-            res.append(c.most_common(1)[0][0])
+        if config.tag_binary_regression:
+            for i in sorted(new_tags):
+                vs = new_tags[i]
+                mean_prob = sum(vs) / len(vs)
+                res.append(1 if mean_prob >= data_args.tag_prob_threshold else 0)
+        else:
+            for i in sorted(new_tags):
+                c = collections.Counter(new_tags[i])
+                res.append(c.most_common(1)[0][0])
 
         assert len(res) == len(text.split())
         return res
