@@ -31,8 +31,11 @@ NOTE = \
     --mt_text FILE
     --source_qe_tags FILE    [only required in training]
     --mt_qe_tags FILE    [only required in training]
+    --valid_tags FILE    [if not set, OK/BAD is the default valid tags.]
     --use_crf_topping
     --crf_learning_rate FLOAT
+    --tag_regression    [set this flag to transfer classification topping to regression]
+    --tag_prob_threshold FLOAT    [only required in testing for regression]
 '''
 
 
@@ -238,14 +241,16 @@ class QETagClassificationDataset(Dataset):
 
         if set_type == 'train':
             qe_tag_map = label_to_id
+            id_to_label = {i: label for label, i in label_to_id.items()}
+            DEF_TAG = id_to_label[0]
             batch_qe_tags_encoding = []
             for i, e in enumerate(examples):
                 source_qe_tags = e.source_qe_tags.split()
                 mt_qe_tags = e.mt_qe_tags.split()
                 if len(mt_qe_tags) == 2 * len(e.mt_text.split()) + 1:
                     mt_qe_tags = mt_qe_tags[1::2]
-                # default QE tag for CLS and SEP are OK
-                qe_tag_encoding = ['OK'] + source_qe_tags + ['OK'] + mt_qe_tags + ['OK']
+                # default QE tag for CLS and SEP are DEFAULT TAG
+                qe_tag_encoding = [DEF_TAG] + source_qe_tags + [DEF_TAG] + mt_qe_tags + [DEF_TAG]
 
                 origin_text = f'{tokenizer.cls_token} {e.source_text} {tokenizer.sep_token} {e.mt_text} ' \
                               f'{tokenizer.sep_token}'
@@ -256,7 +261,7 @@ class QETagClassificationDataset(Dataset):
                 qe_tag_encoding = pieced_qe_tag_encoding
 
                 while len(qe_tag_encoding) < args.max_seq_length:  # padding adaption
-                    qe_tag_encoding.append('BAD')  # PAD are set to BAD in default
+                    qe_tag_encoding.append(DEF_TAG)  # PADs' tag does not really influence for the mask
 
                 if len(qe_tag_encoding) > args.max_seq_length:
                     # seems source and mt will be truncated respectively to fit the max_seq_length requirement
@@ -264,7 +269,22 @@ class QETagClassificationDataset(Dataset):
                     raise ValueError(
                         'I have not done the adaption to qe_tags_input when the text input exceeds max length')
 
-                batch_qe_tags_encoding.append([qe_tag_map[t] for t in qe_tag_encoding])
+
+                # transfer tag index to one hot labels
+                num_label = len(qe_tag_map)
+                if num_label > 2:
+                    example_label = [[0] * num_label for _ in range(len(qe_tag_encoding))]
+                    for i in range(len(qe_tag_encoding)):
+                        qe_tag = qe_tag_encoding[i]
+                        assert qe_tag in qe_tag_map, f'{qe_tag} is an invalid tag among {",".join(qe_tag_map.keys())}'
+                        example_label[i][qe_tag_map[qe_tag_encoding[i]]] = 1
+                else:
+                    example_label = []
+                    for t in qe_tag_encoding:
+                        assert t in qe_tag_map, f'{t} is an invalid tag among {",".join(qe_tag_map.keys())}'
+                        example_label.append(qe_tag_map[t])
+
+                batch_qe_tags_encoding.append(example_label)
 
         else:
             batch_qe_tags_encoding = [None for e in examples]
@@ -898,8 +918,6 @@ class QETagClassificationTrainer(Trainer):
                 label_ids = self.distributed_concat(label_ids, num_total_examples=self.num_examples(dataloader))
 
         # Finally, turn the aggregated tensors into numpy arrays.
-        # if preds is not None:
-        #     preds = preds.cpu().numpy()
         if source_tag_preds is not None:
             source_tag_preds = source_tag_preds.cpu().numpy()
         if mt_tag_preds is not None:
@@ -1114,24 +1132,26 @@ class BertForQETagClassification(BertPreTrainedModel):
 
         self.bert = BertModelWithQETag(config)
 
-        self.tag_binary_regression = config.tag_binary_regression
-        if config.tag_binary_regression:
+        self.num_label = len(config.label2id)
+        self.tag_regression = config.tag_regression
+        if config.tag_regression:
+            num_label = 1 if self.num_label <= 2 else self.num_label
             self.source_qe_tag_outputs = nn.Sequential(
-                nn.Linear(config.hidden_size, 1),
+                nn.Linear(config.hidden_size, num_label),
                 nn.Sigmoid()
             )
             self.mt_qe_tag_outputs = nn.Sequential(
-                nn.Linear(config.hidden_size, 1),
+                nn.Linear(config.hidden_size, num_label),
                 nn.Sigmoid()
             )
         else:
-            self.source_qe_tag_outputs = nn.Linear(config.hidden_size, 2)  # OK or BAD
-            self.mt_qe_tag_outputs = nn.Linear(config.hidden_size, 2)  # OK or BAD
+            self.source_qe_tag_outputs = nn.Linear(config.hidden_size, self.num_label)
+            self.mt_qe_tag_outputs = nn.Linear(config.hidden_size, self.num_label)
 
         self.use_crf_topping = config.use_crf_topping
         if config.use_crf_topping:
-            self.source_qe_tag_crf = ConditionalRandomField(2)
-            self.mt_qe_tag_crf = ConditionalRandomField(2)
+            self.source_qe_tag_crf = ConditionalRandomField(self.num_label)
+            self.mt_qe_tag_crf = ConditionalRandomField(self.num_label)
 
     def forward(
             self,
@@ -1160,7 +1180,7 @@ class BertForQETagClassification(BertPreTrainedModel):
 
         if self.use_crf_topping:
 
-            if self.tag_binary_regression:
+            if self.tag_regression:
                 # need to transfer probs to logits
                 source_tag_logits = torch.cat((1 - source_tag_logits, source_tag_logits), dim=-1)
                 mt_tag_logits = torch.cat((1 - mt_tag_logits, mt_tag_logits), dim=-1)
@@ -1196,12 +1216,32 @@ class BertForQETagClassification(BertPreTrainedModel):
 
             if tag_labels is not None:
 
-                if self.tag_binary_regression:
-                    source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 1.0)
-                    mt_active_logits = mt_tag_logits.squeeze(-1).masked_fill(~mt_tag_masks, 1.0)
-                    source_tag_loss = BCELoss()(source_active_logits, tag_labels.type(torch.float))
-                    mt_tag_loss = BCELoss()(mt_active_logits, tag_labels.type(torch.float))
+                # loss for regression
+                if self.tag_regression:
+                    bce = BCELoss(reduction='sum')
+                    if self.num_label == 2:
+                        source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 1.0)
+                        mt_active_logits = mt_tag_logits.squeeze(-1).masked_fill(~mt_tag_masks, 1.0)
+                        source_tag_loss = bce(source_active_logits, tag_labels.type(torch.float))
+                        mt_tag_loss = bce(mt_active_logits, tag_labels.type(torch.float))
+                    else:
+                        batch_size, seq_len = source_tag_masks.shape
+                        src_mask_exp = (~source_tag_masks).unsqueeze(-1).expand(batch_size, seq_len, self.num_label)
+                        mt_mask_exp = (~mt_tag_masks).unsqueeze(-1).expand(batch_size, seq_len, self.num_label)
 
+                        source_active_logits = source_tag_logits.masked_fill(src_mask_exp, 0.0)
+                        source_tag_loss = bce(source_active_logits,
+                                              tag_labels.masked_fill(src_mask_exp, 0).type(torch.float))
+
+                        mt_active_logits = mt_tag_logits.masked_fill(mt_mask_exp, 0.0)
+                        mt_tag_loss = bce(mt_active_logits,
+                                          tag_labels.masked_fill(mt_mask_exp, 0).type(torch.float))
+
+                    # mean the loss
+                    source_tag_loss /= source_tag_masks.sum()
+                    mt_tag_loss /= mt_tag_masks.sum()
+
+                # loss for classification
                 else:
                     loss_fct = CrossEntropyLoss()
                     source_active_tag_labels = torch.where(source_tag_masks.view(-1), tag_labels.view(-1),
@@ -1260,7 +1300,7 @@ class ModelArguments:
         default=False,
         metadata={"help": "Set this flag to add CRF layers upon base bert rather than Linear Layers."}
     )
-    tag_binary_regression: bool = field(
+    tag_regression: bool = field(
         default=False,
         metadata={"help": "Set this flag to change the classification for top layers to regression (probability "
                           "prediction). Note that only effective in 2-class tag classification."}
@@ -1288,6 +1328,7 @@ class DataTrainingArguments:
         default=None,
         metadata={'help': 'Path to the MT QE tags file.'}
     )
+
     max_seq_length: int = field(
         default=128,
         metadata={
@@ -1308,6 +1349,7 @@ class DataTrainingArguments:
       @wyzypa
       20201103 add crf_learning_rate
       20201104 add tag_prob_threshold
+      20201114 add valid_tags
     ================================================================================
     '''
     crf_learning_rate: float = field(
@@ -1316,7 +1358,12 @@ class DataTrainingArguments:
     )
     tag_prob_threshold: float = field(
         default=0.5,
-        metadata={"help": "The threshold for predicting tag in regression mode. Only effective during prediction when --tag_binary_regression is specified."}
+        metadata={"help": "The threshold for predicting tag in regression mode. Only effective during prediction when --tag_regression is specified."}
+    )
+    valid_tags: str = field(
+        default=None,
+        metadata={'help': 'Path to the valid tags file. If not set, tags are expected to be OK/BADs. The most '
+                          'frequently used tag is recommended to be placed at first.'}
     )
     '''
     ================================================================================
@@ -1349,7 +1396,23 @@ def main():
     # Set seed
     set_seed(training_args.seed)
 
-    labels = ['OK', 'BAD']
+    '''
+    ==============================================================================
+     @ wyzypa
+     20201114 read in valid tags file
+    ==============================================================================
+    '''
+    if data_args.valid_tags is not None:
+        with open(data_args.valid_tags, 'r') as f:
+            labels = f.read().strip().split()
+    else:
+        labels = ['OK', 'BAD']
+
+    '''
+    ==============================================================================
+     @wyzypa End.
+    ==============================================================================
+    '''
     id_to_label: Dict[int, str] = {i: label for i, label in enumerate(labels)}
     label_to_id: Dict[str, int] = {label: i for i, label in enumerate(labels)}
     num_labels = len(labels)
@@ -1366,7 +1429,7 @@ def main():
     =================================================================================
       @wyzypa
       20201031 add extra arguments into config object
-      20201102 tag_binary_regression included
+      20201102 tag_regression included
     =================================================================================
     '''
     if not hasattr(config, 'use_crf_topping'):
@@ -1380,8 +1443,8 @@ def main():
     training_args.crf_learning_rate = data_args.crf_learning_rate
     delattr(data_args, 'crf_learning_rate')
 
-    if not hasattr(config, 'tag_binary_regression'):
-        config.tag_binary_regression = model_args.tag_binary_regression
+    if not hasattr(config, 'tag_regression'):
+        config.tag_regression = model_args.tag_regression
 
     '''
     =================================================================================
@@ -1415,22 +1478,37 @@ def main():
     )
 
     def align_predictions(predictions: np.ndarray, mask: torch.Tensor) -> List[List[str]]:
-        if predictions.shape[-1] > 1:
-            preds = np.argmax(predictions, axis=2)
+        regression_mode = config.tag_regression
+        if regression_mode:
+            if predictions.shape[-1] > 1:
+                # multi-label regression
+                preds = predictions
+            else:
+                preds = predictions.squeeze(-1)
         else:
-            preds = predictions.squeeze(-1)
-        batch_size, max_len = preds.shape
+            # classification
+            preds = np.argmax(predictions, axis=2)
+
+        batch_size, max_len = preds.shape[:2]
         res = [[] for _ in range(batch_size)]
 
         mask = mask.cpu().numpy()
         preds[~mask] = -100
 
-        for i in range(batch_size):
-            for j in range(1, max_len):
-                if preds[i, j] >= 0:
-                    res[i].append(preds[i, j])
-                elif preds[i, j - 1] >= 0:
-                    break
+        if preds.ndim == 2:
+            for i in range(batch_size):
+                for j in range(1, max_len):
+                    if preds[i, j] >= 0:
+                        res[i].append(preds[i, j])
+                    elif preds[i, j - 1] >= 0:
+                        break
+        else:
+            for i in range(batch_size):
+                for j in range(1, max_len):
+                    if preds[i, j].min() >= 0:
+                        res[i].append(preds[i, j])
+                    elif preds[i, j - 1].min() >= 0:
+                        break
 
         return res
 
@@ -1442,11 +1520,17 @@ def main():
             new_tags[pieced_to_origin_map[i]].append(tag)
 
         res = []
-        if config.tag_binary_regression:
+        if config.tag_regression:
             for i in sorted(new_tags):
                 vs = new_tags[i]
                 mean_prob = sum(vs) / len(vs)
-                res.append(1 if mean_prob >= data_args.tag_prob_threshold else 0)
+                if num_labels == 2:
+                    # output tag label text
+                    res_tag = 1 if mean_prob >= data_args.tag_prob_threshold else 0
+                else:
+                    res_tag = '|'.join([str(f) for f in list(mean_prob)])
+                res.append(res_tag)
+
         else:
             for i in sorted(new_tags):
                 c = collections.Counter(new_tags[i])
@@ -1499,11 +1583,17 @@ def main():
         if trainer.is_world_master():
             with Path(source_tag_res_file).open('w') as f:
                 for tags in orig_source_tag_preds:
-                    f.write(' '.join(id_to_label[t] for t in tags) + '\n')
+                    if num_labels == 2:    # binary regression or classification
+                        f.write(' '.join(id_to_label[t] for t in tags) + '\n')
+                    else:    # multi-label regression
+                        f.write(' '.join(t for t in tags) + '\n')
 
             with Path(mt_tag_res_file).open('w') as f:
                 for tags in orig_mt_tag_preds:
-                    f.write(' '.join(id_to_label[t] for t in tags) + '\n')
+                    if num_labels == 2:  # binary regression or classification
+                        f.write(' '.join(id_to_label[t] for t in tags) + '\n')
+                    else:  # multi-label regression
+                        f.write(' '.join(t for t in tags) + '\n')
 
 
 if __name__ == "__main__":
