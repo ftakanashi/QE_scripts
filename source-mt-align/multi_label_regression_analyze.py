@@ -19,6 +19,13 @@ def parse_args():
     parser.add_argument('--output_dir', default=None,
                         help='Path to the output directory.')
 
+    parser.add_argument('--ok_prob_threshold', type=float, default=None,
+                        help='Threshold for probability of OK tag. Prediction with probabilities above which will be '
+                             'extracted as OK')
+    parser.add_argument('--bad_prob_std_threshold', type=float, default=None,
+                        help='Threshold for standard variance for three bad tags. Check the code for detailed usage '
+                             'information.')
+
 
     args = parser.parse_args()
 
