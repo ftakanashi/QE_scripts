@@ -1577,8 +1577,12 @@ def main():
             for mt_line, mt_tag_pred in zip(mt_lines, mt_tag_preds):
                 orig_mt_tag_preds.append(map_tag_to_origin(mt_line, tokenizer, mt_tag_pred))
 
-        source_tag_res_file = os.path.join(training_args.output_dir, 'pred.source_tags')
-        mt_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags')
+        if num_labels == 2:
+            source_tag_res_file = os.path.join(training_args.output_dir, 'pred.source_tags')
+            mt_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags')
+        else:
+            source_tag_res_file = os.path.join(training_args.output_dir, 'pred.source_tags.prob')
+            mt_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags.prob')
 
         if trainer.is_world_master():
             with Path(source_tag_res_file).open('w') as f:
