@@ -1135,6 +1135,21 @@ class BertForQETagClassification(BertPreTrainedModel):
         self.num_label = len(config.label2id)
         self.tag_regression = config.tag_regression
         if config.tag_regression:
+
+            pair_wise_tags = config.pair_wise_regression.split(',')
+            if len(pair_wise_tags) == 0:
+                self.pair_wise_mode = False
+                self.pair_wise_tags = config.label2id.keys()
+            else:
+                assert len(pair_wise_tags) == 2, f'Must specify exact 2 tags. Got {len(pair_wise_tags)}'
+                for t in pair_wise_tags:
+                    assert t in config.label2id, f'pair-wise tag {t} not in valid tags: {config.label2id}'
+                self.pair_wise_mode = True
+                self.pair_wise_tags = pair_wise_tags
+                self.num_label = 2
+
+            self.pair_wise_tag_ids = [config.label2id[t] for t in self.pair_wise_tags]
+
             num_label = 1 if self.num_label <= 2 else self.num_label
             self.source_qe_tag_outputs = nn.Sequential(
                 nn.Linear(config.hidden_size, num_label),
@@ -1294,6 +1309,7 @@ class ModelArguments:
       @wyzypa
       20201031 add argument for CRF
       20201102 add argument for regression
+      20201120 add argument for pair-wise regression
     ========================================================================================
     '''
     use_crf_topping: bool = field(
@@ -1304,6 +1320,13 @@ class ModelArguments:
         default=False,
         metadata={"help": "Set this flag to change the classification for top layers to regression (probability "
                           "prediction). Note that only effective in 2-class tag classification."}
+    )
+    pair_wise_regression: str = field(
+        default='',
+        metadata={'help': 'only valid when --tag_regression is set. Specify a string containing two tags included '
+                          'in valid tags splited by an English comma. During training only these two tags are '
+                          'counted into loss. During predicting, the model predicts the binary probability of being '
+                          'one tag or the other.'}
     )
     '''
     ========================================================================================
@@ -1430,6 +1453,7 @@ def main():
       @wyzypa
       20201031 add extra arguments into config object
       20201102 tag_regression included
+      20201120 pair_wise_regression included
     =================================================================================
     '''
     if not hasattr(config, 'use_crf_topping'):
@@ -1445,6 +1469,9 @@ def main():
 
     if not hasattr(config, 'tag_regression'):
         config.tag_regression = model_args.tag_regression
+
+    if not hasattr(config, 'pair_wise_regression'):
+        config.pair_wise_regression = model_args.pair_wise_regression
 
     '''
     =================================================================================
