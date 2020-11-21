@@ -1635,6 +1635,9 @@ def main():
             mt_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags.prob')
 
         if trainer.is_world_master():
+            if config.pair_wise_regression != '':
+                id_to_label = {i: t for i, t in enumerate(config.pair_wise_regression.split(','))}
+
             with Path(source_tag_res_file).open('w') as f:
                 for tags in orig_source_tag_preds:
                     if num_labels == 2 or config.pair_wise_regression != '':    # binary regression or classification
