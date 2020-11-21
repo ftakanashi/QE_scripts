@@ -1574,7 +1574,7 @@ def main():
             for i in sorted(new_tags):
                 vs = new_tags[i]
                 mean_prob = sum(vs) / len(vs)
-                if num_labels == 2:
+                if num_labels == 2 or config.pair_wise_regression != '':
                     # output tag label text
                     res_tag = 1 if mean_prob >= data_args.tag_prob_threshold else 0
                 else:
@@ -1637,14 +1637,14 @@ def main():
         if trainer.is_world_master():
             with Path(source_tag_res_file).open('w') as f:
                 for tags in orig_source_tag_preds:
-                    if num_labels == 2:    # binary regression or classification
+                    if num_labels == 2 or config.pair_wise_regression != '':    # binary regression or classification
                         f.write(' '.join(id_to_label[t] for t in tags) + '\n')
                     else:    # multi-label regression
                         f.write(' '.join(t for t in tags) + '\n')
 
             with Path(mt_tag_res_file).open('w') as f:
                 for tags in orig_mt_tag_preds:
-                    if num_labels == 2:  # binary regression or classification
+                    if num_labels == 2 or config.pair_wise_regression != '':  # binary regression or classification
                         f.write(' '.join(id_to_label[t] for t in tags) + '\n')
                     else:  # multi-label regression
                         f.write(' '.join(t for t in tags) + '\n')
