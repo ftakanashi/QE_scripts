@@ -35,6 +35,7 @@ NOTE = \
     --use_crf_topping
     --crf_learning_rate FLOAT
     --tag_regression    [set this flag to transfer classification topping to regression]
+    --pair_wise_regression TAG,TAG [set this flag to do pair-wise regression. Only valide when tag_regression is set]
     --tag_prob_threshold FLOAT    [only required in testing for regression]
 '''
 
