@@ -1133,22 +1133,23 @@ class BertForQETagClassification(BertPreTrainedModel):
         self.bert = BertModelWithQETag(config)
 
         self.num_label = len(config.label2id)
+        self.label2id = config.label2id
         self.tag_regression = config.tag_regression
         if config.tag_regression:
 
             pair_wise_tags = config.pair_wise_regression.split(',')
-            if len(pair_wise_tags) == 0:
+            if config.pair_wise_regression == '':
                 self.pair_wise_mode = False
                 self.pair_wise_tags = config.label2id.keys()
             else:
+                assert len(self.label2id) > 2, 'You don\'t need to specify --pair_wise_regression because valid tags ' \
+                                               'are less than 2.'
                 assert len(pair_wise_tags) == 2, f'Must specify exact 2 tags. Got {len(pair_wise_tags)}'
                 for t in pair_wise_tags:
                     assert t in config.label2id, f'pair-wise tag {t} not in valid tags: {config.label2id}'
                 self.pair_wise_mode = True
                 self.pair_wise_tags = pair_wise_tags
                 self.num_label = 2
-
-            self.pair_wise_tag_ids = [config.label2id[t] for t in self.pair_wise_tags]
 
             num_label = 1 if self.num_label <= 2 else self.num_label
             self.source_qe_tag_outputs = nn.Sequential(
@@ -1193,6 +1194,7 @@ class BertForQETagClassification(BertPreTrainedModel):
         source_tag_logits = self.source_qe_tag_outputs(sequence_output)
         mt_tag_logits = self.mt_qe_tag_outputs(sequence_output)
 
+        # use CRF
         if self.use_crf_topping:
 
             if self.tag_regression:
@@ -1227,49 +1229,69 @@ class BertForQETagClassification(BertPreTrainedModel):
             output = ((new_source_tag_logits, new_mt_tag_logits), ) + outputs[2:]
             return ((total_loss, ) + output) if total_loss is not None else output
 
-        else:
+        if tag_labels is not None:
 
-            if tag_labels is not None:
+            # loss for regression
+            if self.tag_regression:
+                bce = BCELoss(reduction='sum')
+                if self.num_label == 2:
 
-                # loss for regression
-                if self.tag_regression:
-                    bce = BCELoss(reduction='sum')
-                    if self.num_label == 2:
-                        source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 1.0)
-                        mt_active_logits = mt_tag_logits.squeeze(-1).masked_fill(~mt_tag_masks, 1.0)
-                        source_tag_loss = bce(source_active_logits, tag_labels.type(torch.float))
-                        mt_tag_loss = bce(mt_active_logits, tag_labels.type(torch.float))
-                    else:
-                        batch_size, seq_len = source_tag_masks.shape
-                        src_mask_exp = (~source_tag_masks).unsqueeze(-1).expand(batch_size, seq_len, self.num_label)
-                        mt_mask_exp = (~mt_tag_masks).unsqueeze(-1).expand(batch_size, seq_len, self.num_label)
+                    if self.pair_wise_mode:
+                        assert tag_labels.ndim == 3, 'wired dimensions for tag_labels'
+                        backed = tag_labels.argmax(axis=-1)
+                        new_tag_labels = torch.zeros_like(backed)
+                        new_source_tag_masks = torch.zeros_like(source_tag_masks).type(torch.bool)
+                        new_mt_tag_masks = torch.zeros_like(mt_tag_masks).type(torch.bool)
+                        for i, tag in enumerate(self.pair_wise_tags):
+                            n = self.label2id[tag]
+                            new_tag_labels[backed == n] = i
+                            new_source_tag_masks[backed == n] = True
+                            new_mt_tag_masks[backed == n] = True
+                        new_source_tag_masks[source_tag_masks == False] = False
+                        new_mt_tag_masks[mt_tag_masks == False] = False
 
-                        source_active_logits = source_tag_logits.masked_fill(src_mask_exp, 0.0)
-                        source_tag_loss = bce(source_active_logits,
-                                              tag_labels.masked_fill(src_mask_exp, 0).type(torch.float))
+                        tag_labels = new_tag_labels
+                        source_tag_masks = new_source_tag_masks
+                        mt_tag_masks = new_mt_tag_masks
 
-                        mt_active_logits = mt_tag_logits.masked_fill(mt_mask_exp, 0.0)
-                        mt_tag_loss = bce(mt_active_logits,
-                                          tag_labels.masked_fill(mt_mask_exp, 0).type(torch.float))
+                    source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 0.0)
+                    mt_active_logits = mt_tag_logits.squeeze(-1).masked_fill(~mt_tag_masks, 0.0)
 
-                    # mean the loss
-                    source_tag_loss /= source_tag_masks.sum()
-                    mt_tag_loss /= mt_tag_masks.sum()
-
-                # loss for classification
+                    source_tag_loss = bce(source_active_logits,
+                                          tag_labels.masked_fill(~source_tag_masks, 0).type(torch.float))
+                    mt_tag_loss = bce(mt_active_logits,
+                                      tag_labels.masked_fill(~mt_tag_masks, 0).type(torch.float))
                 else:
-                    loss_fct = CrossEntropyLoss()
-                    source_active_tag_labels = torch.where(source_tag_masks.view(-1), tag_labels.view(-1),
-                                                           torch.tensor(loss_fct.ignore_index).type_as(tag_labels))
-                    mt_active_tag_labels = torch.where(mt_tag_masks.view(-1), tag_labels.view(-1),
+                    batch_size, seq_len = source_tag_masks.shape
+                    src_mask_exp = (~source_tag_masks).unsqueeze(-1).expand(batch_size, seq_len, self.num_label)
+                    mt_mask_exp = (~mt_tag_masks).unsqueeze(-1).expand(batch_size, seq_len, self.num_label)
+
+                    source_active_logits = source_tag_logits.masked_fill(src_mask_exp, 0.0)
+                    source_tag_loss = bce(source_active_logits,
+                                          tag_labels.masked_fill(src_mask_exp, 0).type(torch.float))
+
+                    mt_active_logits = mt_tag_logits.masked_fill(mt_mask_exp, 0.0)
+                    mt_tag_loss = bce(mt_active_logits,
+                                      tag_labels.masked_fill(mt_mask_exp, 0).type(torch.float))
+
+                # mean the loss
+                source_tag_loss /= source_tag_masks.sum()
+                mt_tag_loss /= mt_tag_masks.sum()
+
+            # loss for classification
+            else:
+                loss_fct = CrossEntropyLoss()
+                source_active_tag_labels = torch.where(source_tag_masks.view(-1), tag_labels.view(-1),
                                                        torch.tensor(loss_fct.ignore_index).type_as(tag_labels))
-                    source_tag_loss = loss_fct(source_tag_logits.view(-1, 2), source_active_tag_labels)
-                    mt_tag_loss = loss_fct(mt_tag_logits.view(-1, 2), mt_active_tag_labels)
+                mt_active_tag_labels = torch.where(mt_tag_masks.view(-1), tag_labels.view(-1),
+                                                   torch.tensor(loss_fct.ignore_index).type_as(tag_labels))
+                source_tag_loss = loss_fct(source_tag_logits.view(-1, 2), source_active_tag_labels)
+                mt_tag_loss = loss_fct(mt_tag_logits.view(-1, 2), mt_active_tag_labels)
 
-                total_loss = source_tag_loss + mt_tag_loss
+            total_loss = source_tag_loss + mt_tag_loss
 
-            output = ((source_tag_logits, mt_tag_logits),) + outputs[2:]
-            return ((total_loss,) + output) if total_loss is not None else output
+        output = ((source_tag_logits, mt_tag_logits),) + outputs[2:]
+        return ((total_loss,) + output) if total_loss is not None else output
 
 
 #############################################################
