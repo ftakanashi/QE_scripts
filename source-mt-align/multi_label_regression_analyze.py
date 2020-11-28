@@ -19,12 +19,12 @@ def parse_args():
     parser.add_argument('--output_dir', default=None,
                         help='Path to the output directory.')
 
-    parser.add_argument('--ok_prob_threshold', type=float, default=None,
-                        help='Threshold for probability of OK tag. Prediction with probabilities above which will be '
-                             'extracted as OK')
-    parser.add_argument('--bad_prob_std_threshold', type=float, default=None,
-                        help='Threshold for standard variance for three bad tags. Check the code for detailed usage '
-                             'information.')
+    # parser.add_argument('--ok_prob_threshold', type=float, default=None,
+    #                     help='Threshold for probability of OK tag. Prediction with probabilities above which will be '
+    #                          'extracted as OK')
+    # parser.add_argument('--bad_prob_std_threshold', type=float, default=None,
+    #                     help='Threshold for standard variance for three bad tags. Check the code for detailed usage '
+    #                          'information.')
 
 
     args = parser.parse_args()
@@ -54,21 +54,28 @@ def process(res_container, args):
         row_res = []
         for ok_prob, rep_prob, ins_prob, del_prob in zip(*row_probs):
             # core of rules
-            if ok_prob > args.ok_prob_threshold:
+
+            bad_probs = np.array([rep_prob, ins_prob, del_prob])
+            # if ok_prob > args.ok_prob_threshold:
+            #     tag = 'OK'
+            # else:
+            #     bad_probs = np.array([rep_prob, ins_prob, del_prob])
+            #     if bad_probs.std() < args.bad_prob_std_threshold:
+            #         tag = 'REP'
+            #     else:
+            #         tag = ['REP', 'INS', 'DEL'][bad_probs.argmax()]
+
+            if ok_prob > 0.9:
                 tag = 'OK'
             else:
-                bad_probs = np.array([rep_prob, ins_prob, del_prob])
-                if bad_probs.std() < args.bad_prob_std_threshold:
-                    tag = 'REP'
-                else:
-                    tag = ['REP', 'INS', 'DEL'][bad_probs.argmax()]
+                tag = ['REP', 'INS', 'DEL'][bad_probs.argmax()]
 
             row_res.append(tag)
 
         res.append(' '.join(row_res))
 
-    assert args.input.endswith('.prob')
-    wf = open(os.path.join(args.output_dir, args.input.strip('.prob')), 'w')
+    assert args.input.name.endswith('.prob')
+    wf = open(os.path.join(args.output_dir, args.input.name.replace('.prob', '')), 'w')
     for row in res:
         wf.write(row + '\n')
 
@@ -83,7 +90,7 @@ def main():
 
     if args.split_prob_only:
         for suf in res_container:
-            wf = open(os.path.join(args.output_dir, f'{args.input}.{suf}'), 'w')
+            wf = open(os.path.join(args.output_dir, f'{args.input.name}.{suf}'), 'w')
             for l in res_container[suf]:
                 wf.write(' '.join(str(f) for f in l) + '\n')
             wf.close()
