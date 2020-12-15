@@ -212,7 +212,7 @@ class BertForAlignWithTagPrediction(BertPreTrainedModel):
         self.bert = BertModel(config)
         self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)    # num_labels is for QA
 
-        self.tag_binary_regression = config.tag_binary_regression
+        self.tag_binary_regression = config.tag_binary_regression if hasattr(config, 'tag_binary_regression') else False
         self.tag_map = config.tag_map
         if self.tag_binary_regression:
             assert self.tag_map == {'OK': 0, 'BAD': 1, 'None': -1}, 'if tag_binary_regression is specified, ' \
