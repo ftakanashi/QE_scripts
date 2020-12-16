@@ -69,11 +69,11 @@ def parse_args():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-rst', '--ref_source_tags', type=Path)
-    parser.add_argument('-rt', '--ref_tags', type=Path)
+    parser.add_argument('-rt', '--ref_tags', type=Path, default=None)
     parser.add_argument('-rgt', '--ref_gap_tags', type=Path, default=None)
 
     parser.add_argument('-pst', '--pred_source_tags', type=Path)
-    parser.add_argument('-pt', '--pred_tags', type=Path)
+    parser.add_argument('-pt', '--pred_tags', type=Path, default=None)
     parser.add_argument('-pgt', '--pred_gap_tags', type=Path, default=None)
 
     # parser.add_argument('--evaluate-merged-mt', action='store_true',
@@ -113,21 +113,22 @@ def main():
     print(f'src_mcc:{src_mcc:.4}')
     print('---')
 
-    # MT (only word or word&gap)
-    ref_mt_tags = read_tag(args.ref_tags)
-    pred_mt_tags = read_tag(args.pred_tags)
-    mt_ok_pre, mt_ok_rec, mt_ok_f1, mt_bad_pre, mt_bad_rec, mt_bad_f1, mt_mcc = compute_scores(ref_mt_tags,
-                                                                                               pred_mt_tags)
-    mt_f1_multi = mt_ok_f1 * mt_bad_f1
+    if args.ref_tags is not None and args.pred_tags is not None:
+        # MT (only word or word&gap)
+        ref_mt_tags = read_tag(args.ref_tags)
+        pred_mt_tags = read_tag(args.pred_tags)
+        mt_ok_pre, mt_ok_rec, mt_ok_f1, mt_bad_pre, mt_bad_rec, mt_bad_f1, mt_mcc = compute_scores(ref_mt_tags,
+                                                                                                   pred_mt_tags)
+        mt_f1_multi = mt_ok_f1 * mt_bad_f1
 
-    print(f'mt_ok_precision: {mt_ok_pre:.4}')
-    print(f'mt_ok_recall: {mt_ok_rec:.4}')
-    print(f'mt_ok_f1: {mt_ok_f1:.4}')
-    print(f'mt_bad_precision: {mt_bad_pre:.4}')
-    print(f'mt_bad_recall: {mt_bad_rec:.4}')
-    print(f'mt_bad_f1: {mt_bad_f1:.4}')
-    print(f'mt_mcc:{mt_mcc:.4}')
-    print('---')
+        print(f'mt_ok_precision: {mt_ok_pre:.4}')
+        print(f'mt_ok_recall: {mt_ok_rec:.4}')
+        print(f'mt_ok_f1: {mt_ok_f1:.4}')
+        print(f'mt_bad_precision: {mt_bad_pre:.4}')
+        print(f'mt_bad_recall: {mt_bad_rec:.4}')
+        print(f'mt_bad_f1: {mt_bad_f1:.4}')
+        print(f'mt_mcc:{mt_mcc:.4}')
+        print('---')
 
     # GAP
     if args.ref_gap_tags is not None and args.pred_gap_tags is not None:

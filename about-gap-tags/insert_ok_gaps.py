@@ -1,6 +1,11 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
+NOTE = '''
+    This script takes a MT word tag file as an input.
+    Then insert [OK] into all gaps between the word tags as MT gap tags.
+'''
+
 import argparse
 
 def parse_args():
@@ -22,7 +27,12 @@ def main():
 
     wf = open(args.output, 'w')
     for l in lines:
-        wf.write(' '.join(['OK'] * (len(l.split()) + 1) ) + '\n')
+        word_tags = l.split()
+        res = ['OK', ]
+        for wt in word_tags:
+            res.append(wt)
+            res.append('OK')
+        wf.write(' '.join(res) + '\n')
 
     wf.close()
 
