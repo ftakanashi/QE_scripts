@@ -33,7 +33,8 @@ NOTE = \
     --mt_tags FILE    [only required during training]
     --valid_tags FILE
     --tag_regression    [set this flag to transfer classification topping to regression]
-    --tag_prob_threshold FLOAT    [only required in testing for regression]
+    --word_tag_prob_threshold FLOAT    [only required in testing for regression]
+    --gap_tag_prob_threshold FLOAT    [only required in testing for regression]
 '''
 
 
@@ -824,9 +825,15 @@ class DataTrainingArguments:
       20201215 argument for gap symbol added
     ================================================================================
     '''
-    tag_prob_threshold: float = field(
+    word_tag_prob_threshold: float = field(
         default=0.5,
-        metadata={"help": "The threshold for predicting tag in regression mode. Only effective during prediction when --tag_regression is specified."}
+        metadata={"help": "The threshold for predicting word tags in regression mode. Only effective during prediction "
+                          "when --tag_regression is specified."}
+    )
+    gap_tag_prob_threshold: float = field(
+        default=0.5,
+        metadata={"help": "The threshold for predicting gapa tags in regression mode. Only effective during "
+                          "prediction when --tag_regression is speficied."}
     )
     valid_tags: str = field(
         default=None,
@@ -987,7 +994,7 @@ def main():
                 mean_prob = sum(vs) / len(vs)
                 if num_labels == 2:
                     # output tag label text
-                    res_tag = 1 if mean_prob >= data_args.tag_prob_threshold else 0
+                    res_tag = 1 if mean_prob >= data_args.word_tag_prob_threshold else 0
                 else:
                     res_tag = '|'.join([str(f) for f in list(mean_prob)])
                 res.append(res_tag)
@@ -1043,7 +1050,7 @@ def main():
         orig_mt_gap_tag_preds = []
         for mt_gap_tag_pred in mt_gap_tag_preds:
             orig_mt_gap_tag_preds.append(
-                [1 if p >= data_args.tag_prob_threshold else 0 for p in mt_gap_tag_pred]
+                [1 if p >= data_args.gap_tag_prob_threshold else 0 for p in mt_gap_tag_pred]
             )
 
         if num_labels == 2:
