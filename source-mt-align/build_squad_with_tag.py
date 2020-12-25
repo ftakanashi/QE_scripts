@@ -82,10 +82,10 @@ def point2span(span):
     return res
 
 
-def make_aug_src(src_tokens, query_i):
+def make_aug_src(src_tokens, query_i, spec_tok):
     tmp = copy.copy(src_tokens)
-    tmp.insert(query_i, '¶')
-    tmp.insert(query_i + 2, '¶')
+    tmp.insert(query_i, spec_tok)
+    tmp.insert(query_i + 2, spec_tok)
     return ' '.join(tmp)
 
 
@@ -138,7 +138,8 @@ def process_one_pair(src_line, src_tags_line,
 
         pos_count = imp_count = 0  # partial counts within the direction under processing
         for i in range(len(from_tokens)):
-            aug = make_aug_src(from_tokens, i)  # insert special tokens to mark the token being processed
+            # insert special tokens to mark the token being processed
+            aug = make_aug_src(from_tokens, i, args.special_token)
             to_span = align[i]  # a list of aligned target indexs. May be empty list.
             from_token_tag = from_tags[i] if len(from_tags) > 0 else 'None'
 
@@ -347,6 +348,10 @@ def parse_args():
 
     parser.add_argument('--shards', type=int, default=1,
                         help='When processing huge dataset, split the json into several shards.')
+
+    parser.add_argument('--special_token', default='[ALI]',
+                        help='The special token that mark a word in the query. Make sure that the token is in '
+                             'vocabulary of mBERT.')
 
     args = parser.parse_args()
 
