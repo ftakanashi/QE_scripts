@@ -3,6 +3,7 @@
 
 import argparse
 import math
+import random
 from scipy.stats import norm
 
 def parse_args():
@@ -14,6 +15,8 @@ def parse_args():
                         help='Path to the first hypothesis tag file.')
     parser.add_argument('-h2', '--hyp2',
                         help='Path to the second hypothesis tag file.')
+    parser.add_argument('-n', '--number',
+                        help='Number of samples extracted to do the test.')
     parser.add_argument('--p_value', type=float, default=0.05,
                         help='P-value for test. Default: 0.05')
 
@@ -40,13 +43,23 @@ def main():
         hyp1_tags.extend(hyp1_toks)
         hyp2_tags.extend(hyp2_toks)
 
+    # sampling
+    N = len(ref_tags)
+    sample_indices = random.sample(range(N), args.number)
+    ref_sample = [ref_tags[i] for i in sample_indices]
+    hyp1_sample = [hyp1_tags[i] for i in sample_indices]
+    hyp2_sample = [hyp2_tags[i] for i in sample_indices]
+
     # sigificance test
-    n1 = n2 = len(ref_tags)
+    n1 = n2 = args.number
     x1 = x2 = 0
-    for r, h in zip(ref_tags, hyp1_tags):
+    for r, h in zip(ref_sample, hyp1_sample):
         if r == h: x1 += 1
-    for r, h in zip(ref_tags, hyp2_tags):
+    for r, h in zip(ref_sample, hyp2_sample):
         if r == h: x2 += 1
+
+    print(f'{args.hyp1}: ({x1}/{n1})')
+    print(f'{args.hyp2}: ({x2}/{n2})')
     p1 = x1 / float(n1)
     p2 = x2 / float(n2)
     p = (x1 + x2) / float((n1 + n2))

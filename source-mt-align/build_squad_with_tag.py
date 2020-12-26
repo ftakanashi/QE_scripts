@@ -349,7 +349,7 @@ def parse_args():
     parser.add_argument('--shards', type=int, default=1,
                         help='When processing huge dataset, split the json into several shards.')
 
-    parser.add_argument('--special_token', default='[ALI]',
+    parser.add_argument('--special_token', default='¶',
                         help='The special token that mark a word in the query. Make sure that the token is in '
                              'vocabulary of mBERT.')
 
