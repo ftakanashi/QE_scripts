@@ -15,7 +15,7 @@ def parse_args():
                         help='Path to the first hypothesis tag file.')
     parser.add_argument('-h2', '--hyp2',
                         help='Path to the second hypothesis tag file.')
-    parser.add_argument('-n', '--number',
+    parser.add_argument('-n', '--number', type=int,
                         help='Number of samples extracted to do the test.')
     parser.add_argument('--p_value', type=float, default=0.05,
                         help='P-value for test. Default: 0.05')

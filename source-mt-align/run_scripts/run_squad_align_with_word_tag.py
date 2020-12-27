@@ -36,6 +36,7 @@ NOTE = \
     --valid_tags FILE
     --tag_binary_regression
     --freeze_base_during_training
+    --exclude_alignment_info
     
 '''
 
@@ -213,6 +214,7 @@ class BertForAlignWithTagPrediction(BertPreTrainedModel):
         self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)    # num_labels is for QA
 
         self.tag_binary_regression = config.tag_binary_regression if hasattr(config, 'tag_binary_regression') else False
+        self.exclude_alignment_info = config.exclude_alignment_info if hasattr(config, 'exclude_alignment_info') else False
         self.tag_map = config.tag_map
         if self.tag_binary_regression:
             assert self.tag_map == {'OK': 0, 'BAD': 1, 'None': -1}, 'if tag_binary_regression is specified, ' \
@@ -276,7 +278,7 @@ class BertForAlignWithTagPrediction(BertPreTrainedModel):
         end_logits = end_logits.squeeze(-1)
 
         total_loss = None
-        if start_positions is not None and end_positions is not None:
+        if not self.exclude_alignment_info and start_positions is not None and end_positions is not None:
             # If we are on multi-GPU, split add a dimension
             if len(start_positions.size()) > 1:
                 start_positions = start_positions.squeeze(-1)
@@ -298,7 +300,10 @@ class BertForAlignWithTagPrediction(BertPreTrainedModel):
                 tag_loss = BCELoss()(tag_logits.view(-1), tags.type(torch.float))
             else:
                 tag_loss = CrossEntropyLoss()(tag_logits, tags)
-            total_loss += tag_loss
+            if total_loss is not None:
+                total_loss += tag_loss
+            else:
+                total_loss = tag_loss    # exclude_alignment_info is set
 
         if not return_dict:
             output = (start_logits, end_logits, tag_logits) + outputs[2:]
@@ -1948,6 +1953,7 @@ def main():
       @wyzypa
       20201008 arg for valid tag file
       20201030 arg for freezing the base model
+      20201226 arg for exclude alignment information during training
     ==========================================================================================
     '''
     parser.add_argument(
@@ -1969,6 +1975,12 @@ def main():
         '--freeze_base_during_training',
         action='store_true',
         help='Whether to freeze the parameters in base model during training.'
+    )
+
+    parser.add_argument(
+        '--exclude_alignment_info',
+        action='store_true',
+        help='Set this flag to exclude the loss of word alignment during training.'
     )
     '''
     ==========================================================================================
@@ -2056,6 +2068,7 @@ def main():
       @wyzypa
       20201009 read in valid tags and build tag_map and save it into configuration and args for future usage
       20201030 set the flag --tag_binary_regression to configuration object
+      20201226 set the flag --exclude_alignment_info to configuration object
     ================================================================================================
     '''
     if not hasattr(config, 'tag_map'):
@@ -2073,7 +2086,7 @@ def main():
         args.tag_map = config.tag_map
 
     config.tag_binary_regression = args.tag_binary_regression
-
+    config.exclude_alignment_info = args.exclude_alignment_info
     '''
     ================================================================================================
       @wyzypa End
