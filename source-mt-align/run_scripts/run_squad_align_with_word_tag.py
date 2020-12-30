@@ -37,6 +37,7 @@ NOTE = \
     --tag_binary_regression
     --freeze_base_during_training
     --exclude_alignment_info
+    --alignment_loss_lambda
     
 '''
 
@@ -215,6 +216,7 @@ class BertForAlignWithTagPrediction(BertPreTrainedModel):
 
         self.tag_binary_regression = config.tag_binary_regression if hasattr(config, 'tag_binary_regression') else False
         self.exclude_alignment_info = config.exclude_alignment_info if hasattr(config, 'exclude_alignment_info') else False
+        self.alignment_loss_lambda = config.alignment_loss_lambda if hasattr(config, 'alignment_loss_lambda') else 1.0
         self.tag_map = config.tag_map
         if self.tag_binary_regression:
             assert self.tag_map == {'OK': 0, 'BAD': 1, 'None': -1}, 'if tag_binary_regression is specified, ' \
@@ -293,6 +295,7 @@ class BertForAlignWithTagPrediction(BertPreTrainedModel):
             start_loss = loss_fct(start_logits, start_positions)
             end_loss = loss_fct(end_logits, end_positions)
             total_loss = (start_loss + end_loss) / 2
+            total_loss = total_loss * self.alignment_loss_lambda
 
         tag_logits = self.tag_outputs(cls_output)
         if tags is not None:
@@ -1982,6 +1985,13 @@ def main():
         action='store_true',
         help='Set this flag to exclude the loss of word alignment during training.'
     )
+
+    parser.add_argument(
+        '--alignment_loss_lambda',
+        type=float,
+        default=1.0,
+        help='The factor to adjust the influence of alignment.'
+    )
     '''
     ==========================================================================================
       @wyzypa End
@@ -2087,6 +2097,7 @@ def main():
 
     config.tag_binary_regression = args.tag_binary_regression
     config.exclude_alignment_info = args.exclude_alignment_info
+    config.alignment_loss_lambda = args.alignment_loss_lambda
     '''
     ================================================================================================
       @wyzypa End
