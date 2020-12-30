@@ -29,7 +29,7 @@ def parse_args():
 
     parser.add_argument('-p', '--pred-json', default=None,
                         help='Path to predictions_.json')
-    parser.add_argument('-ao', '--align-output', required=True,
+    parser.add_argument('-ao', '--align-output', required=True, default=None,
                         help='Path to the output alignment file.')
 
     parser.add_argument('-sto', '--src_tags_output', default=None,
@@ -142,12 +142,13 @@ def main():
         data = json.load(f)
 
     # extract alignment information
-    align_info = get_align_info(data)
-    wf = open(args.align_output, 'w')
-    for sent_id in tqdm(sorted(align_info), mininterval=1.0, ncols=50, desc='Extracting alignment information'):
-        aligns = process_one_line(align_info[sent_id], args)
-        wf.write(' '.join(aligns) + '\n')
-    wf.close()
+    if args.align_output is not None:
+        align_info = get_align_info(data)
+        wf = open(args.align_output, 'w')
+        for sent_id in tqdm(sorted(align_info), mininterval=1.0, ncols=50, desc='Extracting alignment information'):
+            aligns = process_one_line(align_info[sent_id], args)
+            wf.write(' '.join(aligns) + '\n')
+        wf.close()
 
     # extract QE tag information
     if args.src_tags_output and args.tgt_tags_output:
