@@ -60,7 +60,7 @@ def compute_scores(true_tags, test_tags):
 
     mcc_numerator = (tp * tn) - (fp * fn)
     mcc_denominator = ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)) ** 0.5
-    mcc = mcc_numerator / mcc_denominator
+    mcc = mcc_numerator / (mcc_denominator + 1e-5)
 
     return ok_preceision, ok_recall, ok_f1, bad_precision, bad_recall, bad_f1, mcc
 
