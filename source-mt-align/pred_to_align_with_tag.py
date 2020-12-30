@@ -29,7 +29,7 @@ def parse_args():
 
     parser.add_argument('-p', '--pred-json', default=None,
                         help='Path to predictions_.json')
-    parser.add_argument('-ao', '--align-output', required=True, default=None,
+    parser.add_argument('-ao', '--align-output', default=None,
                         help='Path to the output alignment file.')
 
     parser.add_argument('-sto', '--src_tags_output', default=None,
