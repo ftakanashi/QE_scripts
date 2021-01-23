@@ -5,10 +5,10 @@ import os
 
 from sklearn.metrics import precision_score, recall_score, f1_score
 
-PLAIN_TAGS = ['OK', 'BAD']
+ORIGINAL_TAGS = ['OK', 'BAD']
 FG_TAGS = ['OK', 'REP', 'INS', 'DEL']
 TAG_OPTIONS = {
-    'plain': PLAIN_TAGS,
+    'original': ORIGINAL_TAGS,
     'fine_grained': FG_TAGS
 }
 
@@ -19,8 +19,8 @@ def parse_args():
                         help='Path prefix of reference files.')
     parser.add_argument('-p', '--prediction_prefix', default='pred',
                         help='Path prefix of prediciton files. Default: pred')
-    parser.add_argument('-m', '--mode', default='plain', choices=['fine_grained', 'plain'],
-                        help='Select an evaluation mode.\nAvailable: fine_grained, plain.\nDefault: plain')
+    parser.add_argument('-m', '--mode', default='original', choices=['fine_grained', 'original'],
+                        help='Select an evaluation mode.\nAvailable: fine_grained, original.\nDefault: original')
 
     return parser.parse_args()
 
