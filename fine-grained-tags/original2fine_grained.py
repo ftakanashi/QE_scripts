@@ -109,6 +109,8 @@ def parse_args():
                         help='Path to the MT tag files.\nNEEDS ONLY WORD TAG FILE!!!')
     parser.add_argument('-a', '--source_mt_align', type=Path,
                         help='Path to the source-MT alignment file.')
+    parser.add_argument('-o', '--output_dir', default=os.getcwd(),
+                        help='Path to the output directory where modified tag files and other output files are saved.')
 
     parser.add_argument('--mismatch_strategy', default='remove', choices=['remove'],
                         help='Set the strategy handling unexpected situations like OK-BAD alignments or non-aligned '
@@ -197,7 +199,8 @@ def main():
 
 
     def get_new_fn(fn):
-        dn = os.path.dirname(os.path.abspath(fn))
+        # dn = os.path.dirname(os.path.abspath(fn))
+        dn = args.output_dir
         fn = os.path.basename(fn)
         prefix, ext = fn.rsplit('.', 1)
         return os.path.join(dn, f'{prefix}.mod.{ext}')
