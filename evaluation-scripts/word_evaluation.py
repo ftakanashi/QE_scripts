@@ -70,6 +70,23 @@ def compute_scores(refe_fn, pred_fn, tag_opts):
     num_pred_tags = [tag_map.get(t, tag_i) for t in pred_tags]
     total_f1 = f1_score(num_ref_tags, num_pred_tags, average='weighted', pos_label=None)
 
+    # if only two types of tags are predicted, add MCC
+    if len(tag_opts) == 2:
+        pos_tag, nev_tag = tag_opts
+        tp = fp = tn = fn = 0
+        for pred_tag, ref_tag in zip(pred_tags, ref_tags):
+            if pred_tag == pos_tag:
+                if ref_tag == pos_tag: tp += 1
+                else: fp += 1
+            else:
+                if ref_tag == pos_tag: fn += 1
+                else: tn += 1
+
+        mcc_numerator = (tp * tn) - (fp * fn)
+        mcc_denominator = ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)) ** 0.5
+        mcc = mcc_numerator / (mcc_denominator + 1e-5)
+        res['mcc'] = mcc
+
     return res, total_f1
 
 def main():
@@ -84,11 +101,14 @@ def main():
 
         print(f'======== {type}(P/R/F1) =========')
         for tag in res:
-            info = res[tag]
-            print('{}: {:.4} / {:.4} / {:.4}'.format(
-                tag, info['precision'], info['recall'], info['f1']
-            ))
+            if tag != 'mcc':
+                info = res[tag]
+                print('{}: {:.4} / {:.4} / {:.4}'.format(
+                    tag, info['precision'], info['recall'], info['f1']
+                ))
         print('TOTAL F1: {:.4}'.format(total_f1))
+        if 'mcc' in res:
+            print('MCC: {:.4}'.format(res['mcc']))
         print('')
 
 if __name__ == '__main__':
