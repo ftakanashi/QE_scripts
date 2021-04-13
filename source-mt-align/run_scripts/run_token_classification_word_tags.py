@@ -37,6 +37,7 @@ NOTE = \
     --tag_regression    [set this flag to transfer classification topping to regression]
     --pair_wise_regression TAG,TAG [set this flag to do pair-wise regression. Only valide when tag_regression is set]
     --tag_prob_threshold FLOAT    [only required in testing for regression]
+    --tag_prob_pooling [mean,max,min]   [set the mode for pooling several token tags during prediction]
 '''
 
 
@@ -1396,6 +1397,7 @@ class DataTrainingArguments:
       20201103 add crf_learning_rate
       20201104 add tag_prob_threshold
       20201114 add valid_tags
+      20210413 add tag_prob_pooling
     ================================================================================
     '''
     crf_learning_rate: float = field(
@@ -1411,6 +1413,14 @@ class DataTrainingArguments:
         metadata={'help': 'Path to the valid tags file. If not set, tags are expected to be OK/BADs. The most '
                           'frequently used tag is recommended to be placed at first.'}
     )
+    tag_prob_pooling: str = field(
+        default='mean',
+        metadata={
+            'help': 'Pooling method to merge several token tags into a word tag.',
+            'choices': ['mean', 'max', 'min']
+        }
+    )
+
     '''
     ================================================================================
       @wyzypa End.
@@ -1573,12 +1583,19 @@ def main():
         if config.tag_regression:
             for i in sorted(new_tags):
                 vs = new_tags[i]
-                mean_prob = sum(vs) / len(vs)
+
+                if data_args.tag_prob_pooling == 'mean':
+                    prob = sum(vs) / len(vs)
+                elif data_args.tag_prob_pooling == 'max':
+                    prob = max(vs)
+                elif data_args.tag_prob_pooling == 'min':
+                    prob = min(vs)
+
                 if num_labels == 2 or config.pair_wise_regression != '':
                     # output tag label text
-                    res_tag = 1 if mean_prob >= data_args.tag_prob_threshold else 0
+                    res_tag = 1 if prob >= data_args.tag_prob_threshold else 0
                 else:
-                    res_tag = '|'.join([str(f) for f in list(mean_prob)])
+                    res_tag = '|'.join([str(f) for f in list(prob)])
                 res.append(res_tag)
 
         else:
