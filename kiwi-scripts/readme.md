@@ -17,6 +17,8 @@
 
 第三，train_estimator.yaml中默认只进行MT word tag的预测。需要手动控制几个配置中的项来决定训练。
 通常，正向训练时预测MT tags，因此打开predict-target和predict-gaps
-反向训练时预测Source tags，因此打开predict-source
+反向训练时预测Source tags，因此打开predict-source。除了这个，反向训练的时候应该指明加载的是预测source的predictor，所以要将默认的
+load-pred-target注释，换成load-pred-source指向训练完成的预测source的Predictor模型。
+
 此外，这个配置文件默认使用WMT18以前的MT tag格式，即默认不含有gap tags。如果要预测gap tags，则需要将wmt18-format设置为true。
 ```

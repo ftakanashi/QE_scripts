@@ -10,7 +10,7 @@ def parse_args():
     parser.add_argument('-o', '--output',
                         help='Path to the output file.')
     parser.add_argument('-t', '--threshold', type=float, default=0.5,
-                        help='A threshold above which tag would be predicted as BAD.')
+                        help='A threshold above which tag would be predicted as BAD. Default: 0.5')
     args = parser.parse_args()
     return args
 
