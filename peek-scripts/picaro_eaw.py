@@ -51,9 +51,9 @@ try:
             a1_file_str = sys.argv[1];  del sys.argv[1]
         elif option == '-a2':
             a2_file_str = sys.argv[1];  del sys.argv[1]
-        elif option == '-f':
+        elif option == '-s':
             f_file_str = sys.argv[1];   del sys.argv[1]
-        elif option == '-e':
+        elif option == '-t':
             e_file_str = sys.argv[1];   del sys.argv[1]
         elif option == '-maxlen':
             maxlen = int(sys.argv[1]);  del sys.argv[1]
