@@ -176,8 +176,9 @@ def parse_args():
                         help='A probability value to randomly insert a GAP between two original words. Default: 0.5 '
                              'if alignment is provided else 1.0 (generating testing data).')
 
-    parser.add_argument('--gap_token', default='[GAP]', help='the token representing gaps.')
-    parser.add_argument('--special_token', default='¶', help='a special token marking out corresponding word.')
+    parser.add_argument('--gap_token', default='[GAP]', help='the token representing gaps. Default: [GAP]')
+    parser.add_argument('--special_token', default='¶', help='a special token marking out corresponding word. '
+                                                             'Default: ¶')
 
     args = parser.parse_args()
     return args
@@ -227,7 +228,7 @@ def main():
         pair_res = process_one_pair(src_line, tgt_line, align_info, pair_id, args)
 
         data.append({
-            'paragraphs': pair_res,
+            'paragraphs': [pair_res, ],
             'title': f'{pair_id}'
         })
 
