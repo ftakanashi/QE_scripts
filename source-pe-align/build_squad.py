@@ -18,6 +18,7 @@ import collections
 import copy
 import json
 import random
+import sys
 
 
 def analyze_alignment(align_lines, opt):
@@ -266,6 +267,9 @@ def process(opt):
 
 
 def main():
+
+    sys.stderr.write('Please use source-mt-align/build_squad_with_tags.py for clearer and simpler usage.')
+
     parser = argparse.ArgumentParser(
     '''
         Nagata san's paper: https://arxiv.org/pdf/2004.14516.pdf
