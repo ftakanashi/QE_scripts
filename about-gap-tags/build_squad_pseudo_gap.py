@@ -86,43 +86,51 @@ def calc_answer_start(tgt_tokens, target_span):
         total_len += len(t)
     return total_len
 
-def process_one_pair(src_line, tgt_line, align_info, pair_id, args):
+def process_one_pair(src_line, tgt_line, s2t_align_info, t2s_align_info, pair_id, args):
     global possible_count
     global impossible_count
 
-    context, src_tokens, tgt_tokens, gap_token, special_token = \
-        src_line, src_line.split(), tgt_line.split(), args.gap_token, args.special_token
+    src_tokens, tgt_tokens, gap_token, special_token = \
+        src_line.split(), tgt_line.split(), args.gap_token, args.special_token
 
     # following probabilities will be set to
-    rep_gap_prob = args.rep_gap_prob if align_info else 0.0
-    add_gap_prob = args.add_gap_prob if align_info else 1.0
+    sample_align_prob = args.sample_align_prob if s2t_align_info else 0.0
+    add_all_mt_gaps = args.add_all_mt_gaps
 
-    def make_aug_src(tokens, i, mode='add'):
+    def make_aug_src(tokens, i, **kwargs):
+        mode = kwargs.get('mode', 'add')
+        if mode not in ('add', 'rep'): raise Exception(f'Invalid mode {mode}.')
+        all_mt_gaps = add_all_mt_gaps == 1
         tmp_tokens = tokens.copy()
-        if mode == 'add':
-            tmp_tokens.insert(i, gap_token)
-        elif mode == 'rep':
-            tmp_tokens[i] = gap_token
+        if all_mt_gaps:
+            gap_tokens = [gap_token for _ in range(len(tmp_tokens) + 1)]
+            if mode == 'rep':
+                tmp_tokens.pop(i)
+                gap_tokens.pop()
+            gap_tokens[i] = f'{special_token} {gap_token} {special_token}'
+            res = []
+            for j in range(len(tmp_tokens)):
+                res.append(gap_tokens[j])
+                res.append(tmp_tokens[j])
+            res.append(gap_tokens[-1])
+            return ' '.join(res)
+
         else:
-            raise Exception(f'Invalid mode {mode}.')
+            if mode == 'add': tmp_tokens.insert(i, f'{special_token} {gap_token} {special_token}')
+            elif mode == 'rep': tmp_tokens[i] = f'{special_token} {gap_token} {special_token}'
+            return ' '.join(tmp_tokens)
 
-        tmp_tokens.insert(i+1, special_token)
-        tmp_tokens.insert(i, special_token)
-        return ' '.join(tmp_tokens)
+    t2s_res = {'context': src_line, 'qas': []}
 
-    res = {'context': context}
-    qas = []
-
-    if align_info:
-        # if the alignment information is provided, we maybe generating pseudo training data
+    if t2s_align_info:
         for i, tgt_token in enumerate(tgt_tokens):
-            if random.random() > rep_gap_prob: continue
+            if random.random() > sample_align_prob or i not in t2s_align_info: continue
 
             item = {}
-            item['id'] = f'{pair_id}_{i}_rep'
+            item['id'] = f'{pair_id}_{i}_t2s_rep'
             item['question'] = make_aug_src(tgt_tokens, i, mode='rep')
 
-            spans = point2span(align_info[i])
+            spans = point2span(t2s_align_info[i])
             if len(spans) > 0:
                 item['is_impossible'] = False
                 possible_count += 1
@@ -139,25 +147,22 @@ def process_one_pair(src_line, tgt_line, align_info, pair_id, args):
                 answers = [{'answer_start': -1, 'text': ''}]
             item['answers'] = answers
 
-            qas.append(item)
+            t2s_res['qas'].append(item)
 
     # no matter alignment is provided, we always do add_gap data generation.
     # the difference is that if alignment is not provided, we generate testing data by default. So all gaps will be
     # generated once so the add_gap_prob is set to 1.0 automatically.
     for i in range(len(tgt_tokens) + 1):
-        if random.random() > add_gap_prob: continue
-
         impossible_count += 1
         item = {}
-        item['id'] = f'{pair_id}_{i}_add'
+        item['id'] = f'{pair_id}_{i}_t2s_add'
         item['is_impossible'] = True
         item['question'] = make_aug_src(tgt_tokens, i, mode='add')
         item['answers'] = [{'answer_start': -1, 'text': ''}]
 
-        qas.append(item)
+        t2s_res['qas'].append(item)
 
-    res['qas'] = qas
-    return res
+    return t2s_res
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -168,14 +173,12 @@ def parse_args():
     parser.add_argument('-o', '--output', help='Path to the output file.')
     parser.add_argument('-a', '--align', default=None, help='Path to the Source-PE alignment file if it is needed.')
 
-    parser.add_argument('--rep_gap_prob', type=float, default=0.75,
-                        help='A probability value to randomly replace an original word with a GAP token. Default: '
-                             '0.75 if alignment is provided else 0.0 (not generating any data by replacing original '
-                             'words).')
-    parser.add_argument('--add_gap_prob', type=float, default=0.5,
-                        help='A probability value to randomly insert a GAP between two original words. Default: 0.5 '
-                             'if alignment is provided else 1.0 (generating testing data).')
-
+    parser.add_argument('--sample_align_prob', type=float, default=0.75,
+                        help='The probability to sample a SRC-PE pair for pseudo src-gap data generation. Only valid '
+                             'when -a is specified (means that you are generating training data). Default: 0.75')
+    parser.add_argument('--add_all_mt_gaps', type=int, default=1, choices=[0,1],
+                        help='A flag deciding whether add all gaps into the target side while genrating SQuAD data. '
+                             'Default: 1. Set it to 0 to turn down this switch.')
     parser.add_argument('--gap_token', default='[GAP]', help='the token representing gaps. Default: [GAP]')
     parser.add_argument('--special_token', default='¶', help='a special token marking out corresponding word. '
                                                              'Default: ¶')
@@ -205,15 +208,16 @@ def main():
 
         align_lines = read_fn(args.align)
         assert len(align_lines) == std_len, 'Number of lines does not match for SRC and Alignment'
-        align_lines = reverse_align_lines(align_lines)
-        align_infos = parse_alignment(align_lines)
+        s2t_align_infos = parse_alignment(align_lines)
+        t2s_align_infos = parse_alignment(reverse_align_lines(align_lines))
+
     else:
         if args.tgt.endswith('.pe'):
             flag = input('You didn\'t specify the alignment but looks like that you are inputting PE file as the '
                          'target corpus. Do you want to quit? (y/n)')
             if flag == 'y':
                 sys.exit(1)
-        align_infos = [None for _ in range(std_len)]
+        s2t_align_infos = t2s_align_infos = [None for _ in range(std_len)]
 
     global possible_count
     global impossible_count
@@ -224,11 +228,12 @@ def main():
     total_res['data'] = data
 
     pair_id = 0
-    for src_line, tgt_line, align_info in zip(src_lines, tgt_lines, align_infos):
-        pair_res = process_one_pair(src_line, tgt_line, align_info, pair_id, args)
+    for src_line, tgt_line, s2t_align_info, t2s_align_info in \
+            zip(src_lines, tgt_lines, s2t_align_infos, t2s_align_infos):
+        pair_t2s_res = process_one_pair(src_line, tgt_line, s2t_align_info, t2s_align_info, pair_id, args)
 
         data.append({
-            'paragraphs': [pair_res, ],
+            'paragraphs': [pair_t2s_res, ],
             'title': f'{pair_id}'
         })
 
