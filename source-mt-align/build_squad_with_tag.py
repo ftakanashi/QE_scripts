@@ -201,8 +201,8 @@ def process_one_pair(src_line, src_tags_line,
     possible_count += p_c
     impossible_count += imp_c
 
-    s2t_context = tgt_line
-    t2s_context = src_line
+    s2t_context = ' '.join(tgt_line.strip().split())
+    t2s_context = ' '.join(src_line.strip().split())
 
     return {
                'context': s2t_context,
