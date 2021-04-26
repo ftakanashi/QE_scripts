@@ -197,8 +197,9 @@ if __name__ == "__main__":
                 hypothesis[-1].add(alignment_tuple)
 
     precision, recall, aer, f_measure, errors, source_coverage, target_coverage, internal_jumps, external_jumps = calculate_metrics(sure, possible, hypothesis, args.fAlpha, source, target, args.cleanPunctuation)
-    print("{0}: {1:.1f}% ({2:.1f}%/{3:.1f}%/{4})".format(args.hypothesis,
-                aer * 100.0, precision * 100.0, recall * 100.0, sum([len(x) for x in hypothesis])))
+    print("{0}: {1:.1f}% ({2:.1f}%/{3:.1f}%/{4:.1f}/{5})".format(args.hypothesis,
+                aer * 100.0, precision * 100.0, recall * 100.0, 2*(precision * recall) / (precision + recall),
+                                                                 sum([len(x) for x in hypothesis])))
     if args.fAlpha >= 0.0:
         print("F-Measure: {:.3f}".format(f_measure))
 
