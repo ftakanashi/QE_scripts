@@ -25,9 +25,12 @@ def parse_args():
     return parser.parse_args()
 
 def check_file_exists(args):
-    assert os.path.isfile(args.reference_prefix + '.source_tags')
-    assert os.path.isfile(args.prediction_prefix + '.source_tags')
-    res = ['.source_tags']
+    # assert os.path.isfile(args.reference_prefix + '.source_tags')
+    # assert os.path.isfile(args.prediction_prefix + '.source_tags')
+    res = []
+    if os.path.isfile(args.prediction_prefix + '.source_tags'):
+        assert os.path.isfile(args.reference_prefix + '.source_tags')
+        res.append('.source_tags')
     if os.path.isfile(args.prediction_prefix + '.mtword_tags'):
         assert os.path.isfile(args.reference_prefix + '.mtword_tags')
         res.append('.mtword_tags')
@@ -35,7 +38,6 @@ def check_file_exists(args):
         assert os.path.isfile(args.prediction_prefix + '.tags')
         res.append('.tags')
     return res
-
 
 def compute_scores(refe_fn, pred_fn, tag_opts):
     res = {}
