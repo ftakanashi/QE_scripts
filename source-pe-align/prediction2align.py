@@ -51,7 +51,8 @@ def get_info(data):
         sent_id, tok_id = int(sent_id), int(tok_id)
         if sent_id not in info:
             info[sent_id] = collections.defaultdict(list)
-        if v == '': continue
+        if v == '' : continue
+        if v[3] == v[4] == -1: continue    # rare case adaption
         for target_tok_i in range(v[3], v[4] + 1):
             key_name = f'{tok_id}-{target_tok_i}' if flag == 's2t' else f'{target_tok_i}-{tok_id}'
             info[sent_id][key_name].append(v[5])
@@ -75,7 +76,7 @@ def process_one_line(sent_align_info, opt):
                 (  int(k.split('-')[0]), int(k.split('-')[1])  )
             )
         except ValueError as e:
-            print(f'Error encountered while parseing key {k}')
+            print(f'Error encountered while parsing key {k}')
             raise e
 
     # alignments = [(int(k.split('-')[0]), int(k.split('-')[1])) for k in sent_align_info.keys()]

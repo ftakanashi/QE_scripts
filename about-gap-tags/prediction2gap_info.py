@@ -16,9 +16,11 @@ def parse_args():
 
     parser.add_argument('-ao', '--alignment_output', default=None,
                         help='Path to the alignment output file containing the alignment information between source '
-                             'words and MT gaps.')
+                             'words and MT gaps. Default: None')
     parser.add_argument('--align_prob_threshold', default=0.5, type=float,
-                        help='A probability threshold for extracting alignment. Note that currently, ')
+                        help='A probability threshold for extracting alignment. Note that currently, the script only '
+                             'support one-direction extraction. Therefore, a reasonable value would be around 0.8~0.9.'
+                             'Default: 0.5')
 
     args = parser.parse_args()
     return args
