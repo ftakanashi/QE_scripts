@@ -68,8 +68,17 @@ def process_one_line(sent_align_info, opt):
 
     if len(sent_align_info) == 0:    # no alignment detected
         return []
+    alignments = []
+    for k in sent_align_info.keys():
+        try:
+            alignments.append(
+                (  int(k.split('-')[0]), int(k.split('-')[1])  )
+            )
+        except ValueError as e:
+            print(f'Error encountered while parseing key {k}')
+            raise e
 
-    alignments = [(int(k.split('-')[0]), int(k.split('-')[1])) for k in sent_align_info.keys()]
+    # alignments = [(int(k.split('-')[0]), int(k.split('-')[1])) for k in sent_align_info.keys()]
     max_src_length = max([a[0] for a in alignments]) + 1
     max_tgt_length = max([a[1] for a in alignments]) + 1
 
