@@ -107,7 +107,7 @@ def process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, ar
     # collect s2t qas
     s2t_qas = []
     s2t_res = {
-        'paragraph': [{
+        'paragraphs': [{
             'context': gapped_mt_line,
             'qas': s2t_qas
         }],
@@ -155,7 +155,7 @@ def process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, ar
     # collect t2s qas
     t2s_qas = []
     t2s_res = {
-        'paragraph': [{
+        'paragraphs': [{
             'context': src_line,
             'qas': t2s_qas
         }],
