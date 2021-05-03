@@ -129,11 +129,13 @@ def process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, ar
                         'is_impossible': False,
                         'answers': [get_answer_info(gapped_mt_line, t_i, t_i), ]
                     })
+                    possible_count += 1
             else:
                 if args.no_aligned_gap_source_word_policy == 'skip':
                     pass
                 elif args.no_aligned_gap_source_word_policy == 'empty':
                     s2t_qas.append(empty_record)
+                    impossible_count += 1
                 elif args.no_aligned_gap_source_word_policy == 'src_mt':
                     spans = point2span(src_mt_align[tok_id])
                     for span_id, span in enumerate(spans):
@@ -144,8 +146,10 @@ def process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, ar
                             'is_impossible': False,
                             'answers': [get_answer_info(gapped_mt_line, start_i, end_i)]
                         })
+                        possible_count += 1
         else:
             s2t_qas.append(empty_record)
+            impossible_count += 1
 
     # collect t2s qas
     t2s_qas = []
@@ -174,13 +178,16 @@ def process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, ar
                             'is_impossible': False,
                             'answers': [get_answer_info(src_line, t_i, t_i), ]
                         })
+                        possible_count += 1
                 else:
                     t2s_qas.append(empty_record)
+                    impossible_count += 1
             else:
                 if args.no_aligned_gap_source_word_policy == 'skip':
                     pass
                 elif args.no_aligned_gap_source_word_policy == 'empty':
                     t2s_qas.append(empty_record)
+                    impossible_count += 1
                 elif args.no_aligned_gap_source_word_policy == 'src_mt':
                     spans = point2span(mt_src_align[(tok_id - 1) // 2])
                     for span_id, span in enumerate(spans):
@@ -191,10 +198,12 @@ def process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, ar
                             'is_impossible': False,
                             'answers': [get_answer_info(src_line, start_i, end_i)]
                         })
+                        possible_count += 1
 
         else:
             # generating testing data
             if tok_id & 1 == 0: t2s_qas.append(empty_record)
+            impossible_count += 1
 
     return s2t_res, t2s_res
 
@@ -212,7 +221,7 @@ def process(args):
 
     if args.src_gap_align:
         src_gap_align_lines = read_fn(args.src_gap_align)
-        src_mt_align_lines = read_fn(args.src_mt_align) if args.src_mt_aling else [None for _ in range(std_len)]
+        src_mt_align_lines = read_fn(args.src_mt_align) if args.src_mt_align else [None for _ in range(std_len)]
     else:
         src_gap_align_lines = src_mt_align_lines = [None for _ in range(std_len)]
 
