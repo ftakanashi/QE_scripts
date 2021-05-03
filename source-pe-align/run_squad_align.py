@@ -1442,6 +1442,12 @@ def main():
     parser.add_argument("--server_port", type=str, default="", help="Can be used for distant debugging.")
 
     parser.add_argument("--threads", type=int, default=1, help="multiple threads for converting example to features")
+
+    # My arguments
+    parser.add_argument('--gap_token', type=str, default='[GAP]',
+                        help='Token representing GAP. Default: [GAP]. Need to be specified for never_split settings.')
+
+
     args = parser.parse_args()
 
     if args.doc_stride >= args.max_seq_length - args.max_query_length:
@@ -1515,6 +1521,7 @@ def main():
         args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
         do_lower_case=args.do_lower_case,
         cache_dir=args.cache_dir if args.cache_dir else None,
+        never_split=[args.gap_token, ]
     )
     model = AutoModelForQuestionAnswering.from_pretrained(
         args.model_name_or_path,
