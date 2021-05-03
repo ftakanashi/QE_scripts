@@ -110,7 +110,8 @@ def process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, ar
         'paragraph': [{
             'context': gapped_mt_line,
             'qas': s2t_qas
-        }]
+        }],
+        'title': f'{pair_id}_s2t'
     }
     for tok_id, token in enumerate(src_tokens):
         question = generate_quesiton_str(src_tokens, tok_id)
@@ -157,7 +158,8 @@ def process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, ar
         'paragraph': [{
             'context': src_line,
             'qas': t2s_qas
-        }]
+        }],
+        'title': f'{pair_id}_t2s'
     }
     for tok_id, token in enumerate(gapped_mt_tokens):
         question = generate_quesiton_str(gapped_mt_tokens, tok_id)
