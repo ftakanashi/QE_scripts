@@ -21,6 +21,8 @@ def parse_args():
                         help='Path prefix of prediciton files. Default: pred')
     parser.add_argument('-m', '--mode', default='original', choices=['fine_grained', 'original'],
                         help='Select an evaluation mode.\nAvailable: fine_grained, original.\nDefault: original')
+    parser.add_argument('--verbose', action='store_true', default=False,
+                        help='Add this flag to show the details (TP/FP/FN/TN).')
 
     return parser.parse_args()
 
@@ -42,7 +44,7 @@ def check_file_exists(args):
         res.append('.tags')
     return res
 
-def compute_scores(refe_fn, pred_fn, tag_opts):
+def compute_scores(refe_fn, pred_fn, tag_opts, args):
     res = {}
     ref_tags, pred_tags = [], []
     with open(refe_fn) as f:
@@ -92,6 +94,10 @@ def compute_scores(refe_fn, pred_fn, tag_opts):
         mcc = mcc_numerator / (mcc_denominator + 1e-5)
         res['mcc'] = mcc
 
+        if args.verbose:
+            print(f'\t{tp}\t\t\t{fn}')
+            print(f'\t{fp}\t\t\t{tn}')
+
     return res, total_f1
 
 def main():
@@ -102,7 +108,7 @@ def main():
         refe_fn = f'{args.reference_prefix}{type}'
         pred_fn = f'{args.prediction_prefix}{type}'
         tag_opts = TAG_OPTIONS[args.mode]
-        res, total_f1 = compute_scores(refe_fn, pred_fn, tag_opts)
+        res, total_f1 = compute_scores(refe_fn, pred_fn, tag_opts, args)
 
         print(f'======== {type}(P/R/F1) =========')
         for tag in res:
