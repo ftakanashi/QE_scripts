@@ -40,15 +40,15 @@ def parse_key(key):
         raise e
 
     assert items[2] in ('s2t', 't2s'), 'By default, third flag should be direction that is either s2t or t2s'
-    return items
+    return tuple(items)
 
 
 def process_one_row(row_res, args):
     pair2prob = collections.defaultdict(list)
     gapped_mt_len = -1
-    for k, v in row_res.items():
-        flags = parse_key(k)
+    for flags, v in row_res.items():
         word_id, direc = flags[1:3]
+        if direc == 't2s': gapped_mt_len = max(gapped_mt_len, word_id + 1)
         if v == '': continue
         start_i, end_i, prob = v[3:6]
 
@@ -57,7 +57,6 @@ def process_one_row(row_res, args):
                 pair2prob[f'{word_id}-{t_i}'].append(prob)
 
         elif direc == 't2s':
-            gapped_mt_len = max(gapped_mt_len, word_id + 1)
             for s_i in range(start_i, end_i + 1):
                 pair2prob[f'{s_i}-{word_id}'].append(prob)
 
@@ -66,12 +65,12 @@ def process_one_row(row_res, args):
 
     mt_len = (gapped_mt_len - 1) // 2
     src_gap_aligns, src_mt_aligns = [], []
-    gap_tags = ['OK' for _ in range(mt_len)]
+    gap_tags = ['OK' for _ in range(mt_len + 1)]
     for pair_key, probs in pair2prob.items():
         s_i, t_i = map(int, pair_key.split('-'))
         if t_i & 1 == 0 and sum(probs) / 2 >= args.src_gap_align_prob_threshold:
             src_gap_aligns.append(pair_key)
-            gap_tags[(t_i - 1) // 2] = 'BAD'
+            gap_tags[t_i // 2] = 'BAD'
         elif t_i & 1 == 1 and sum(probs) / 2 >= args.src_word_align_prob_threshold:
             src_mt_aligns.append(pair_key)
     return src_gap_aligns, src_mt_aligns, gap_tags
@@ -82,39 +81,41 @@ def main():
     with open(args.prediction_file) as f:
         content = json.load(f)
 
-    all_keys = sorted(content.keys())
-    i = 0
-    cur_sent_id = 0
+    all_keys = sorted([parse_key(k) + (k, ) for k in content.keys()])
+    i = cur_sent_id = 0
     tag_lines, src_gap_align_lines, src_mt_align_lines = [], [], []
+    percent_base = 1
     while i < len(all_keys):
+
         row = {}
-        while parse_key(all_keys[i])[0] == cur_sent_id:
+        while i < len(all_keys) and all_keys[i][0] == cur_sent_id:
             k = all_keys[i]
-            row[k] = content[k]
+            row[k[:-1]] = content[k[-1]]
             i += 1
 
         src_gap_aligns, src_mt_aligns, gap_tags = process_one_row(row, args)
-
         src_gap_align_lines.append(' '.join(src_gap_aligns))
         src_mt_align_lines.append(' '.join(src_mt_aligns))
         tag_lines.append(' '.join(gap_tags))
 
         cur_sent_id += 1
-        if cur_sent_id % (len(all_keys) // 10):
-            print('{:.4f}% complete.'.format(cur_sent_id / len(all_keys)))
+
+        if i >= percent_base * (len(all_keys) // 10):
+            print('{:.2f}% completed.'.format(i / len(all_keys) * 100))
+            percent_base += 1
 
     with open(args.tag_output, 'w') as wf:
         for tag_line in tag_lines:
-            wf.write(' '.join(tag_line) + '\n')
+            wf.write(tag_line + '\n')
 
     if args.src_gap_alignment_output:
         with open(args.src_gap_alignment_output, 'w') as wf:
             for align_line in src_gap_align_lines:
-                wf.write(' '.join(align_line) + '\n')
+                wf.write(align_line + '\n')
     if args.src_mt_alignment_output:
         with open(args.src_mt_alignment_output, 'w') as wf:
             for align_line in src_mt_align_lines:
-                wf.write(' '.join(align_line) + '\n')
+                wf.write(align_line + '\n')
 
 
 if __name__ == '__main__':
