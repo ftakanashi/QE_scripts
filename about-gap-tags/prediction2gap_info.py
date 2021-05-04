@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+import collections
 import json
-from tqdm import tqdm
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -14,58 +15,107 @@ def parse_args():
                         help='Path to the gap tag output file. If a gap is not aligned to any source words, '
                              'it would be regarded as OK otherwise BAD.')
 
-    parser.add_argument('-ao', '--alignment_output', default=None,
-                        help='Path to the alignment output file containing the alignment information between source '
-                             'words and MT gaps. Default: None')
-    parser.add_argument('--align_prob_threshold', default=0.5, type=float,
-                        help='A probability threshold for extracting alignment. Note that currently, the script only '
-                             'support one-direction extraction. Therefore, a reasonable value would be around 0.8~0.9.'
-                             'Default: 0.5')
+    parser.add_argument('-gao', '--src_gap_alignment_output', default=None,
+                        help='Path to the src-gap alignment output file. Set it to None to avoid output. Default: None')
+    parser.add_argument('-wao', '--src_mt_alignment_output', default=None,
+                        help='Path to the src-mt alignment output file. Set it to None to avoid output. Default: None')
+    parser.add_argument('--src_gap_align_prob_threshold', default=0.4, type=float,
+                        help='A probability threshold for extracting src-gap alignment. Default: 0.4')
+    parser.add_argument('--src_mt_align_prob_threshold', default=0.4, type=float,
+                        help='A probability threshold for extracting src-mt alignment. Default: 0.4')
 
     args = parser.parse_args()
     return args
 
+
 def parse_key(key):
-    sent_id, word_id, direc, mode = key.split('_')
-    sent_id = int(sent_id)
-    word_id = int(word_id)
-    return sent_id, word_id, direc, mode
+    items = key.split('_')
+    try:
+        sent_id = int(items[0])
+        word_id = int(items[1])
+        items[0] = sent_id
+        items[1] = word_id
+    except ValueError as e:
+        print('By default, assert first two flags are sentence id and word id.')
+        raise e
+
+    assert items[2] in ('s2t', 't2s'), 'By default, third flag should be direction that is either s2t or t2s'
+    return items
+
+
+def process_one_row(row_res, args):
+    pair2prob = collections.defaultdict(list)
+    gapped_mt_len = -1
+    for k, v in row_res.items():
+        flags = parse_key(k)
+        word_id, direc = flags[1:3]
+        if v == '': continue
+        start_i, end_i, prob = v[3:6]
+
+        if direc == 's2t':
+            for t_i in range(start_i, end_i + 1):
+                pair2prob[f'{word_id}-{t_i}'].append(prob)
+
+        elif direc == 't2s':
+            gapped_mt_len = max(gapped_mt_len, word_id + 1)
+            for s_i in range(start_i, end_i + 1):
+                pair2prob[f'{s_i}-{word_id}'].append(prob)
+
+        else:
+            raise Exception(f'Invalid direction {direc}')
+
+    mt_len = (gapped_mt_len - 1) // 2
+    src_gap_aligns, src_mt_aligns = [], []
+    gap_tags = ['OK' for _ in range(mt_len)]
+    for pair_key, probs in pair2prob.items():
+        s_i, t_i = map(int, pair_key.split('-'))
+        if t_i & 1 == 0 and sum(probs) / 2 >= args.src_gap_align_prob_threshold:
+            src_gap_aligns.append(pair_key)
+            gap_tags[(t_i - 1) // 2] = 'BAD'
+        elif t_i & 1 == 1 and sum(probs) / 2 >= args.src_word_align_prob_threshold:
+            src_mt_aligns.append(pair_key)
+    return src_gap_aligns, src_mt_aligns, gap_tags
+
 
 def main():
     args = parse_args()
     with open(args.prediction_file) as f:
         content = json.load(f)
 
-    tag_lines, align_lines = [], []
-    tag_line, align_line = [], []
-    prev_sent_id = 0
-    for k, v in tqdm(content.items(), ncols=50, mininterval=0.5):
-        sent_id, word_id, direc, mode = parse_key(k)
-        if sent_id > prev_sent_id:
-            tag_lines.append(tag_line)
-            align_lines.append(align_line)
-            tag_line, align_line = [], []
-            prev_sent_id = sent_id
+    all_keys = sorted(content.keys())
+    i = 0
+    cur_sent_id = 0
+    tag_lines, src_gap_align_lines, src_mt_align_lines = [], [], []
+    while i < len(all_keys):
+        row = {}
+        while parse_key(all_keys[i])[0] == cur_sent_id:
+            k = all_keys[i]
+            row[k] = content[k]
+            i += 1
 
-        if v == '':
-            tag_line.append('OK')
-        elif v[-1] >= args.align_prob_threshold:
-            tag_line.append('BAD')
-            for src_i in range(v[3], v[4]+1):
-                align_line.append(f'{src_i}-{word_id}')
-        else:
-            tag_line.append('OK')
-    tag_lines.append(tag_line)
-    align_lines.append(align_line)
+        src_gap_aligns, src_mt_aligns, gap_tags = process_one_row(row, args)
+
+        src_gap_align_lines.append(' '.join(src_gap_aligns))
+        src_mt_align_lines.append(' '.join(src_mt_aligns))
+        tag_lines.append(' '.join(gap_tags))
+
+        cur_sent_id += 1
+        if cur_sent_id % (len(all_keys) // 10):
+            print('{:.4f}% complete.'.format(cur_sent_id / len(all_keys)))
 
     with open(args.tag_output, 'w') as wf:
         for tag_line in tag_lines:
             wf.write(' '.join(tag_line) + '\n')
 
-    if args.alignment_output:
-        with open(args.alignment_output, 'w') as wf:
-            for align_line in align_lines:
+    if args.src_gap_alignment_output:
+        with open(args.src_gap_alignment_output, 'w') as wf:
+            for align_line in src_gap_align_lines:
                 wf.write(' '.join(align_line) + '\n')
+    if args.src_mt_alignment_output:
+        with open(args.src_mt_alignment_output, 'w') as wf:
+            for align_line in src_mt_align_lines:
+                wf.write(' '.join(align_line) + '\n')
+
 
 if __name__ == '__main__':
     main()

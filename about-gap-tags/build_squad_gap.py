@@ -261,9 +261,8 @@ def parse_args():
                              'gaps into the output. Note that it also affects the default mode for the t2s direciton.'
                              'Only valid when -a is specified generating training data. Default: skip.')
     parser.add_argument('--src_mt_align', default=None,
-                        help='Path to the source-mt alignment. If the path is specified, the output json file would '
-                             'contain src-mt alignment examples along with src-gap examples. Only effective when '
-                             '--src_gap_align is set.')
+                        help='Path to the source-mt alignment. Required if no_aligned_gap_source_word_policy is set '
+                             'to src_mt.')
 
     parser.add_argument('--gap_token', default='[GAP]', help='the token representing gaps. Default: [GAP]')
     parser.add_argument('--special_token', default='¶', help='a special token marking out corresponding word. '

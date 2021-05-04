@@ -34,6 +34,9 @@ def check_file_exists(args):
     if os.path.isfile(args.prediction_prefix + '.mtword_tags'):
         assert os.path.isfile(args.reference_prefix + '.mtword_tags')
         res.append('.mtword_tags')
+    if os.path.isfile(args.prediction_prefix + '.gap_tags'):
+        assert os.path.isfile(args.reference_prefix + '.gap_tags')
+        res.append('.gap_tags')
     if os.path.isfile(args.prediction_prefix + '.tags'):
         assert os.path.isfile(args.prediction_prefix + '.tags')
         res.append('.tags')
