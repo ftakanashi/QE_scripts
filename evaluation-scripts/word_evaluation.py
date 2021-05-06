@@ -21,8 +21,6 @@ def parse_args():
                         help='Path prefix of prediciton files. Default: pred')
     parser.add_argument('-m', '--mode', default='original', choices=['fine_grained', 'original'],
                         help='Select an evaluation mode.\nAvailable: fine_grained, original.\nDefault: original')
-    parser.add_argument('--verbose', action='store_true', default=False,
-                        help='Add this flag to show the details (TP/FP/FN/TN).')
 
     return parser.parse_args()
 
@@ -93,10 +91,6 @@ def compute_scores(refe_fn, pred_fn, tag_opts, args):
         mcc_denominator = ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)) ** 0.5
         mcc = mcc_numerator / (mcc_denominator + 1e-5)
         res['mcc'] = mcc
-
-        if args.verbose:
-            print(f'\t{tp}\t\t\t{fn}')
-            print(f'\t{fp}\t\t\t{tn}')
 
     return res, total_f1
 

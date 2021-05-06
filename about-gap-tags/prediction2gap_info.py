@@ -71,7 +71,7 @@ def process_one_row(row_res, args):
         if t_i & 1 == 0 and sum(probs) / 2 >= args.src_gap_align_prob_threshold:
             src_gap_aligns.append(pair_key)
             gap_tags[t_i // 2] = 'BAD'
-        elif t_i & 1 == 1 and sum(probs) / 2 >= args.src_word_align_prob_threshold:
+        elif t_i & 1 == 1 and sum(probs) / 2 >= args.src_mt_align_prob_threshold:
             src_mt_aligns.append(pair_key)
     return src_gap_aligns, src_mt_aligns, gap_tags
 
