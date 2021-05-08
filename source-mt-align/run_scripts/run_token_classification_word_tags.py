@@ -1500,15 +1500,28 @@ class DataTrainingArguments:
       20201104 add tag_prob_threshold
       20201114 add valid_tags
       20210413 add tag_prob_pooling
+      20210508 modify tag_prob_threshold to src_prob_threshold & mt_word_prob_threshold & mt_gap_prob_threshold
     ================================================================================
     '''
     crf_learning_rate: float = field(
         default=1e-3,
         metadata={"help": "Learning rate for CRF topping layer. Only effective when --use_crf_topping is specified."}
     )
-    tag_prob_threshold: float = field(
+    # tag_prob_threshold: float = field(
+    #     default=0.5,
+    #     metadata={"help": "The threshold for predicting tag in regression mode. Only effective during prediction when --tag_regression is specified."}
+    # )
+    source_prob_threshold: float = field(
         default=0.5,
-        metadata={"help": "The threshold for predicting tag in regression mode. Only effective during prediction when --tag_regression is specified."}
+        metadata={"help": "The threshold for predicting source tags in regression mode. Only effective during testing when --tag_regression is specified"}
+    )
+    mt_word_prob_threshold: float = field(
+        default=0.5,
+        metadata={"help": "The threshold for predicting source tags in regression mode. Only effective during testing when --tag_regression is specified"}
+    )
+    mt_gap_prob_threshold: float = field(
+        default=0.9,
+        metadata={"help": "The threshold for predicting source tags in regression mode. Only effective during testing when --tag_regression is specified"}
     )
     valid_tags: str = field(
         default=None,
@@ -1674,9 +1687,15 @@ def main():
 
         return res
 
-    def map_tag_to_origin(text, tokenizer, tags, pred_gap=False):
+    def map_tag_to_origin(text, tokenizer, tags, pred='source'):
+
+        assert pred in ('source', 'mt_word', 'mt_gap'), f'Invalid predicting flag {pred}.'
+        if pred == 'source': threshold = data_args.source_prob_threshold
+        elif pred == 'mt_word': threshold = data_args.mt_word_prob_threshold
+        else: threshold = data_args.mt_gap_prob_threshold
+
         pieced_to_origin_map = map_offset(text, tokenizer)
-        if pred_gap:
+        if pred == 'mt_gap':
             max_i = max(pieced_to_origin_map.keys())
             max_v = max(pieced_to_origin_map.values())
             assert max_i == len(tags) - 2, f'Inconsistent num of tokens in case:\n{text}\n{tags}'
@@ -1701,7 +1720,7 @@ def main():
 
                 if num_labels == 2 or config.pair_wise_regression != '':
                     # output tag label text
-                    res_tag = 1 if prob >= data_args.tag_prob_threshold else 0
+                    res_tag = 1 if prob >= threshold else 0
                 else:
                     res_tag = '|'.join([str(f) for f in list(prob)])
                 res.append(res_tag)
@@ -1711,7 +1730,7 @@ def main():
                 c = collections.Counter(new_tags[i])
                 res.append(c.most_common(1)[0][0])
 
-        if pred_gap:
+        if pred == 'mt_gap':
             assert len(res) == len(text.split()) + 1
         else:
             assert len(res) == len(text.split())
