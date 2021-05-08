@@ -5,6 +5,7 @@ pe-mt-align/model
 pe-mt-align/tmp*
 cplex-scripts/tmp*
 source-mt-align/tmp*
+source-mt-align/run_scripts/tmp*
 source-pe-align/tmp*
 tmp*
 runs

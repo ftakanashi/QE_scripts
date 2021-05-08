@@ -22,15 +22,16 @@ NOTE = \
 
     
     A typical composition of arguments is like this:
-    --model_type bert --model_name_or_path model --do_train --source_text xxx --mt_text xxx --source_qe_tags xxx 
-    --mt_qe_tags xxx --learning_rate 3e-5 --max_seq_length 384 --output_dir output --cache_dir output 
+    --model_type bert --model_name_or_path model --do_train --source_text xxx --mt_text xxx --source_tags xxx 
+    --mt_word_tags xxx --mt_gap_tags xxx --learning_rate 3e-5 --max_seq_length 384 --output_dir output --cache_dir output 
     --save_steps 1000 --num_train_epochs 5.0 --overwrite_cache --overwrite_output_dir
     
     Some newly added arguments are:
     --source_text FILE
     --mt_text FILE
-    --source_qe_tags FILE    [only required in training]
-    --mt_qe_tags FILE    [only required in training]
+    --source_tags FILE    [only required in training]
+    --mt_word_tags FILE    [only required in training]
+    --mt_gap_tags FILE    [only requried in training]
     --valid_tags FILE    [if not set, OK/BAD is the default valid tags.]
     (DEPRECATED)--use_crf_topping
     (DEPRECATED)--crf_learning_rate FLOAT
@@ -168,8 +169,9 @@ class QETagClassificationInputExample:
     guid: str
     source_text: str
     mt_text: str
-    source_qe_tags: Optional[str] = None
-    mt_qe_tags: Optional[str] = None
+    source_tags: Optional[str] = None
+    mt_word_tags: Optional[str] = None
+    mt_gap_tags: Optional[str] = None
 
 
 @dataclass
@@ -177,15 +179,17 @@ class QETagClassificationInputFeature:
     input_ids: List[int]
     attention_mask: Optional[List[int]] = None
     token_type_ids: Optional[List[int]] = None
-    tag_labels: Optional[Tuple[List[int], List[int]]] = None
+    word_tag_labels: Optional[List[int]] = None
+    gap_tag_labels: Optional[List[int]] = None
 
 
 class QETagClassificationProcessor(DataProcessor):
     def __init__(self, args):
         self.source_text = args.source_text
         self.mt_text = args.mt_text
-        self.source_qe_tags = args.source_qe_tags
-        self.mt_qe_tags = args.mt_qe_tags
+        self.source_tags = args.source_tags
+        self.mt_word_tags = args.mt_word_tags
+        self.mt_gap_tags = args.mt_gap_tags
 
     def get_examples(self, set_type):
 
@@ -199,28 +203,35 @@ class QETagClassificationProcessor(DataProcessor):
         assert len(src_lines) == len(mt_lines), 'Inconsistent number of line'
 
         if set_type == 'train':
-            assert self.source_qe_tags is not None, 'You need to specify source QE Tags file to do train.'
-            assert self.mt_qe_tags is not None, 'You need to specify MT QE Tags file to do train.'
-            source_qe_tags_lines = read_f(self.source_qe_tags)
-            mt_qe_tags_lines = read_f(self.mt_qe_tags)
-            assert len(src_lines) == len(source_qe_tags_lines), 'Inconsistent number of line'
-            assert len(src_lines) == len(mt_qe_tags_lines), 'Inconsistent number of line'
+            assert self.source_tags is not None, 'You need to specify source QE Tags file to do train.'
+            assert self.mt_word_tags is not None, 'You need to specify MT QE Tags file to do train.'
+            source_tags_lines = read_f(self.source_tags)
+            mt_word_tags_lines = read_f(self.mt_word_tags)
+            assert len(src_lines) == len(source_tags_lines), 'Inconsistent number of line'
+            assert len(src_lines) == len(mt_word_tags_lines), 'Inconsistent number of line'
+
+            if self.mt_gap_tags is not None:
+                mt_gap_tags_lines = read_f(self.mt_gap_tags)
+                assert len(src_lines) == len(mt_gap_tags_lines)
+            else:
+                mt_gap_tags_lines = [None] * len(src_lines)
 
         elif set_type == 'eval':
-            source_qe_tags_lines = [None] * len(src_lines)
-            mt_qe_tags_lines = [None] * len(src_lines)
+            source_tags_lines = mt_word_tags_lines = mt_gap_tags_lines = [None] * len(src_lines)
 
         else:
             raise ValueError(f'Invalid set type {set_type}')
 
         i = 0
         examples = []
-        for src_line, mt_line, source_qe_tags_line, mt_qe_tags_line in zip(src_lines, mt_lines, source_qe_tags_lines,
-                                                                           mt_qe_tags_lines):
+        for src_line, mt_line, source_tags_line, mt_word_tags_line, mt_gap_tags_line in zip(src_lines, mt_lines, source_tags_lines,
+                                                                           mt_word_tags_lines, mt_gap_tags_lines):
             guid = f'{set_type}-{i}'
             examples.append(
                 QETagClassificationInputExample(guid=guid, source_text=src_line, mt_text=mt_line,
-                                                source_qe_tags=source_qe_tags_line, mt_qe_tags=mt_qe_tags_line)
+                                                source_tags=source_tags_line,
+                                                mt_word_tags=mt_word_tags_line,
+                                                mt_gap_tags=mt_gap_tags_line)
             )
             i += 1
 
@@ -232,14 +243,19 @@ class QETagClassificationDataset(Dataset):
         self.tokenizer = tokenizer
         self.processor = QETagClassificationProcessor(args)
 
-        if args.source_qe_tags is not None:
-            assert args.mt_qe_tags is not None, 'You must specify MT QE tags simultaneously'
+        if args.source_tags is not None:
+            assert args.mt_word_tags is not None, 'You must specify MT QE tags simultaneously'
         else:
-            assert args.mt_qe_tags is None, 'You must specify Source QE tags simultaneously.'
+            assert args.mt_word_tags is None, 'You must specify Source QE tags simultaneously.'
+
+        if args.mt_gap_tags is not None:
+            assert args.mt_word_tags is not None, 'You must specify MT Word tags with MT Gap tags.'
 
         msg = f"Creating features from dataset files: {args.source_text}, {args.mt_text}"
-        if args.source_qe_tags is not None and args.mt_qe_tags is not None:
-            msg += f', {args.source_qe_tags}, {args.mt_qe_tags}'
+        if args.source_tags is not None and args.mt_word_tags is not None:
+            msg += f', {args.source_tags}, {args.mt_word_tags}'
+        if args.mt_gap_tags is not None:
+            msg += f', {args.mt_gap_tags}'
         logger.info(msg)
 
         examples = self.processor.get_examples(set_type)
@@ -255,18 +271,19 @@ class QETagClassificationDataset(Dataset):
             qe_tag_map = label_to_id
             id_to_label = {i: label for label, i in label_to_id.items()}
             DEF_TAG = id_to_label[0]
-            batch_qe_tags_encoding = []
+            batch_word_tag_encoding = []
+            batch_gap_tag_encoding = []
             for i, e in enumerate(examples):
-                source_qe_tags = e.source_qe_tags.split()
-                mt_qe_tags = e.mt_qe_tags.split()
-                if len(mt_qe_tags) == 2 * len(e.mt_text.split()) + 1:
-                    mt_gap_tags = mt_qe_tags[0::2]
-                    mt_qe_tags = mt_qe_tags[1::2]
+                source_tags = e.source_tags.split()
+                mt_word_tags = e.mt_word_tags.split()
+                if e.mt_gap_tags is not None:
+                    mt_gap_tags = e.mt_gap_tags.split()
+                    assert len(mt_gap_tags) == len(mt_word_tags) + 1, 'Gap tags should always be one more than the word tags!'
                 else:
                     mt_gap_tags = None
 
                 # default QE tag for CLS and SEP are DEFAULT TAG
-                qe_tag_encoding = [DEF_TAG] + source_qe_tags + [DEF_TAG] + mt_qe_tags + [DEF_TAG]
+                qe_tag_encoding = [DEF_TAG] + source_tags + [DEF_TAG] + mt_word_tags + [DEF_TAG]
 
                 origin_text = f'{tokenizer.cls_token} {e.source_text} {tokenizer.sep_token} {e.mt_text} ' \
                               f'{tokenizer.sep_token}'
@@ -281,7 +298,7 @@ class QETagClassificationDataset(Dataset):
 
                 if mt_gap_tags is not None:
                     # for convenience we add source tags here but actually they are not effective for the mask
-                    qe_gap_tag_encoding = [DEF_TAG] + source_qe_tags + [DEF_TAG] + mt_gap_tags
+                    qe_gap_tag_encoding = [DEF_TAG] + source_tags + [DEF_TAG] + mt_gap_tags
                     pieced_qe_gap_tag_encoding = [qe_gap_tag_encoding[pieced_to_origin_mapping[k]] for k in
                                                   range(max_pieced_token_len)]
                     qe_gap_tag_encoding = pieced_qe_gap_tag_encoding
@@ -308,31 +325,35 @@ class QETagClassificationDataset(Dataset):
                 #         assert qe_tag in qe_tag_map, f'{qe_tag} is an invalid tag among {",".join(qe_tag_map.keys())}'
                 #         example_label[i][qe_tag_map[qe_tag_encoding[i]]] = 1
                 # else:
-                example_label = ([], [])    # MT word tags, MT gap tags
+                word_tag_labels = []
                 for t in qe_tag_encoding:
                     assert t in qe_tag_map, f'{t} is an invalid tag among {",".join(qe_tag_map.keys())}'
-                    example_label[0].append(qe_tag_map[t])
+                    word_tag_labels.append(qe_tag_map[t])
 
                 if len(qe_gap_tag_encoding) > 0:
+                    gap_tag_labels = []
                     for t in qe_gap_tag_encoding:
                         assert t in qe_tag_map, f'{t} is an invalid tag among {",".join(qe_tag_map.keys())}'
-                        example_label[1].append(qe_tag_map[t])
+                        gap_tag_labels.append(qe_tag_map[t])
                 else:
-                    example_label[1] = None
+                    gap_tag_labels = None
 
-                batch_qe_tags_encoding.append(example_label)
+                batch_word_tag_encoding.append(word_tag_labels)
+                batch_gap_tag_encoding.append(gap_tag_labels)
 
         else:
-            batch_qe_tags_encoding = [None for _ in examples]
+            batch_word_tag_encoding = batch_gap_tag_encoding = [None for _ in examples]
 
         self.features = []
         for i in range(len(examples)):
             text_inputs = {k: batch_text_encoding[k][i] for k in batch_text_encoding}
-            qe_tags_inputs = batch_qe_tags_encoding[i]
+            word_tag_labels = batch_word_tag_encoding[i]
+            gap_tag_labels = batch_gap_tag_encoding[i]
             feature = QETagClassificationInputFeature(input_ids=text_inputs['input_ids'],
                                                       attention_mask=text_inputs['attention_mask'],
                                                       token_type_ids=text_inputs['token_type_ids'],
-                                                      tag_labels=qe_tags_inputs)
+                                                      word_tag_labels=word_tag_labels,
+                                                      gap_tag_labels=gap_tag_labels)
             self.features.append(feature)
 
     def __len__(self):
@@ -862,9 +883,11 @@ class ConditionalRandomField(torch.nn.Module):
 
 class QETagClassificationPredictionOutput(NamedTuple):
     source_tag_predictions: np.ndarray
-    mt_tag_predictions: np.ndarray
+    mt_word_tag_predictions: np.ndarray
+    mt_gap_tag_predictions: np.ndarray
     source_tag_mask: torch.Tensor
-    mt_tag_mask: torch.Tensor
+    mt_word_tag_mask: torch.Tensor
+    mt_gap_tag_mask: torch.Tensor
     label_ids: Optional[np.ndarray]
     metrics: Optional[Dict[str, float]]
 
@@ -899,10 +922,9 @@ class QETagClassificationTrainer(Trainer):
         logger.info("  Num examples = %d", self.num_examples(dataloader))
         logger.info("  Batch size = %d", batch_size)
         eval_losses: List[float] = []
-        source_tag_preds = []
-        source_tag_masks = []
-        mt_tag_preds = []
-        mt_tag_masks = []
+        source_tag_preds, source_tag_masks = [], []
+        mt_word_tag_preds, mt_word_tag_masks = [], []
+        mt_gap_tag_preds, mt_gap_tag_masks = [], []
         label_ids = []
         model.eval()
 
@@ -913,10 +935,9 @@ class QETagClassificationTrainer(Trainer):
         samples_count = 0
         for inputs in tqdm(dataloader, desc=description, disable=disable_tqdm):
             batch_loss, \
-            batch_source_tag_logits, batch_mt_tag_logits, batch_mt_gap_tag_logtis,\
-            batch_source_tag_masks, batch_mt_tag_masks, batch_mt_gap_tag_masks, \
+            batch_source_tag_logits, batch_mt_word_tag_logits, batch_mt_gap_tag_logits,\
+            batch_source_tag_masks, batch_mt_word_tag_masks, batch_mt_gap_tag_masks, \
             batch_labels = self.prediction_step(model, inputs, prediction_loss_only)
-            # todo 改到这里了
 
             batch_size = inputs[list(inputs.keys())[0]].shape[0]
             samples_count += batch_size
@@ -925,15 +946,20 @@ class QETagClassificationTrainer(Trainer):
                 eval_losses.append(batch_loss * batch_size)
             source_tag_preds.append(batch_source_tag_logits)
             source_tag_masks.append(batch_source_tag_masks)
-            mt_tag_preds.append(batch_mt_tag_logits)
-            mt_tag_masks.append(batch_mt_tag_masks)
+            mt_word_tag_preds.append(batch_mt_word_tag_logits)
+            mt_word_tag_masks.append(batch_mt_word_tag_masks)
+            mt_gap_tag_preds.append(batch_mt_gap_tag_logits)
+            mt_gap_tag_masks.append(batch_mt_gap_tag_masks)
             if batch_labels is not None:
                 label_ids.append(batch_labels)
 
         source_tag_preds = torch.cat(source_tag_preds, dim=0)
         source_tag_masks = torch.cat(source_tag_masks, dim=0)
-        mt_tag_preds = torch.cat(mt_tag_preds, dim=0)
-        mt_tag_masks = torch.cat(mt_tag_masks, dim=0)
+        mt_word_tag_preds = torch.cat(mt_word_tag_preds, dim=0)
+        mt_word_tag_masks = torch.cat(mt_word_tag_masks, dim=0)
+        mt_gap_tag_preds = torch.cat(mt_gap_tag_preds, dim=0)
+        mt_gap_tag_masks = torch.cat(mt_gap_tag_masks, dim=0)
+
         if len(label_ids) > 0:
             label_ids = torch.cat(label_ids, dim=0)
         else:
@@ -948,19 +974,22 @@ class QETagClassificationTrainer(Trainer):
             if source_tag_preds is not None:
                 source_tag_preds = self.distributed_concat(source_tag_preds,
                                                            num_total_examples=self.num_examples(dataloader))
-            if mt_tag_preds is not None:
-                mt_tag_preds = self.distributed_concat(mt_tag_preds,
+            if mt_word_tag_preds is not None:
+                mt_word_tag_preds = self.distributed_concat(mt_word_tag_preds,
                                                        num_total_examples=self.num_examples(dataloader))
-            # if preds is not None:
-            #     preds = self.distributed_concat(preds, num_total_examples=self.num_examples(dataloader))
+            if mt_gap_tag_preds is not None:
+                mt_gap_tag_preds = self.distrbuted_concat(mt_gap_tag_preds,
+                                                          num_total_examples=self.num_examples(dataloader))
             if label_ids is not None:
                 label_ids = self.distributed_concat(label_ids, num_total_examples=self.num_examples(dataloader))
 
         # Finally, turn the aggregated tensors into numpy arrays.
         if source_tag_preds is not None:
             source_tag_preds = source_tag_preds.cpu().numpy()
-        if mt_tag_preds is not None:
-            mt_tag_preds = mt_tag_preds.cpu().numpy()
+        if mt_word_tag_preds is not None:
+            mt_word_tag_preds = mt_word_tag_preds.cpu().numpy()
+        if mt_gap_tag_preds is not None:
+            mt_gap_tag_preds = mt_gap_tag_preds.cpu().numpy()
         if label_ids is not None:
             label_ids = label_ids.cpu().numpy()
 
@@ -974,9 +1003,11 @@ class QETagClassificationTrainer(Trainer):
                 metrics[f"eval_{key}"] = metrics.pop(key)
 
         return QETagClassificationPredictionOutput(source_tag_predictions=source_tag_preds,
-                                                   mt_tag_predictions=mt_tag_preds,
+                                                   mt_word_tag_predictions=mt_word_tag_preds,
+                                                   mt_gap_tag_predictions=mt_gap_tag_preds,
                                                    source_tag_mask=source_tag_masks,
-                                                   mt_tag_mask=mt_tag_masks,
+                                                   mt_word_tag_mask=mt_word_tag_masks,
+                                                   mt_gap_tag_mask=mt_gap_tag_masks,
                                                    label_ids=label_ids,
                                                    metrics=metrics)
 
@@ -984,21 +1015,21 @@ class QETagClassificationTrainer(Trainer):
             self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], prediction_loss_only: bool
     ) -> Tuple[Optional[float], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor],
                Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
-        has_labels = any(inputs.get(k) is not None for k in ["labels", "lm_labels", "masked_lm_labels", 'tag_labels'])
+        has_labels = any(inputs.get(k) is not None for k in ["labels", "lm_labels", "masked_lm_labels", 'word_tag_labels'])
 
         inputs = self._prepare_inputs(inputs)
 
         with torch.no_grad():
             outputs = model(**inputs)
-            source_tag_mask, mt_tag_mask, mt_gap_tag_mask = generate_source_and_mt_tag_mask(inputs['token_type_ids'])
+            source_tag_mask, mt_word_tag_mask, mt_gap_tag_mask = generate_source_and_mt_tag_mask(inputs['token_type_ids'])
             if has_labels:
                 loss, logits = outputs[:2]
-                source_tag_logits, mt_tag_logits, mt_gap_tag_logits = logits
+                source_tag_logits, mt_word_tag_logits, mt_gap_tag_logits = logits
                 loss = loss.mean().item()
             else:
                 loss = None
                 logits = outputs[0]
-                source_tag_logits, mt_tag_logits, mt_gap_tag_logits = logits
+                source_tag_logits, mt_word_tag_logits, mt_gap_tag_logits = logits
             if self.args.past_index >= 0:
                 self._past = outputs[self.args.past_index if has_labels else self.args.past_index - 1]
 
@@ -1008,7 +1039,7 @@ class QETagClassificationTrainer(Trainer):
         labels = inputs.get("labels")
         if labels is not None:
             labels = labels.detach()
-        return (loss, source_tag_logits, mt_tag_logits, mt_gap_tag_logits, source_tag_mask, mt_tag_mask,
+        return (loss, source_tag_logits, mt_word_tag_logits, mt_gap_tag_logits, source_tag_mask, mt_word_tag_mask,
                 mt_gap_tag_mask, labels)
 
     def create_optimizer_and_scheduler(self, num_training_steps: int):
@@ -1021,8 +1052,8 @@ class QETagClassificationTrainer(Trainer):
 
             if hasattr(self.model, 'source_qe_tag_crf'):
                 bert_and_classifier_parameters = list(self.model.bert.named_parameters()) + \
-                                                 list(self.model.source_qe_tag_outputs.named_parameters()) + \
-                                                 list(self.model.mt_qe_tag_outputs.named_parameters())
+                                                 list(self.model.source_tag_outputs.named_parameters()) + \
+                                                 list(self.model.mt_word_tag_outputs.named_parameters())
 
                 crf_parameters = list(self.model.source_qe_tag_crf.named_parameters()) + \
                                  list(self.model.mt_qe_tag_crf.named_parameters())
@@ -1192,29 +1223,28 @@ class BertForQETagClassification(BertPreTrainedModel):
                 self.num_label = 2
 
             num_label = 1 if self.num_label <= 2 else self.num_label
-            self.source_qe_tag_outputs = nn.Sequential(
+            self.source_tag_outputs = nn.Sequential(
                 nn.Linear(config.hidden_size, num_label),
                 nn.Sigmoid()
             )
-            self.mt_qe_tag_outputs = nn.Sequential(
+            self.mt_word_tag_outputs = nn.Sequential(
                 nn.Linear(config.hidden_size, num_label),
                 nn.Sigmoid()
             )
-
-            if config.with_gap_tag_prediction:
-                self.mt_gap_tag_outputs = nn.Sequential(
-                    nn.Linear(config.hidden_size, num_label),
-                    nn.Sigmoid()
-                )
+            self.mt_gap_tag_outputs = nn.Sequential(
+                nn.Linear(config.hidden_size, num_label),
+                nn.Sigmoid()
+            )
         else:
-            self.source_qe_tag_outputs = nn.Linear(config.hidden_size, self.num_label)
-            self.mt_qe_tag_outputs = nn.Linear(config.hidden_size, self.num_label)
+            self.source_tag_outputs = nn.Linear(config.hidden_size, self.num_label)
+            self.mt_word_tag_outputs = nn.Linear(config.hidden_size, self.num_label)
             self.mt_gap_tag_outputs = nn.Linear(config.hidden_size, self.num_label)
 
-        self.use_crf_topping = config.use_crf_topping
-        if config.use_crf_topping:
-            self.source_qe_tag_crf = ConditionalRandomField(self.num_label)
-            self.mt_qe_tag_crf = ConditionalRandomField(self.num_label)
+        # (DEPRECATED)
+        # self.use_crf_topping = config.use_crf_topping
+        # if config.use_crf_topping:
+        #     self.source_qe_tag_crf = ConditionalRandomField(self.num_label)
+        #     self.mt_qe_tag_crf = ConditionalRandomField(self.num_label)
 
     def forward(
             self,
@@ -1224,7 +1254,8 @@ class BertForQETagClassification(BertPreTrainedModel):
             position_ids=None,
             head_mask=None,
             inputs_embeds=None,
-            tag_labels=None,
+            word_tag_labels=None,
+            gap_tag_labels=None,
     ):
         outputs = self.bert(
             input_ids,
@@ -1236,49 +1267,49 @@ class BertForQETagClassification(BertPreTrainedModel):
         )
 
         sequence_output = outputs[0]
-        source_tag_masks, mt_tag_masks, mt_gap_tag_masks = generate_source_and_mt_tag_mask(token_type_ids)
+        source_tag_masks, mt_word_tag_masks, mt_gap_tag_masks = generate_source_and_mt_tag_mask(token_type_ids)
         total_loss = None
-        source_tag_logits = self.source_qe_tag_outputs(sequence_output)
-        mt_tag_logits = self.mt_qe_tag_outputs(sequence_output)
+        source_tag_logits = self.source_tag_outputs(sequence_output)
+        mt_word_tag_logits = self.mt_word_tag_outputs(sequence_output)
         mt_gap_tag_logits = self.mt_gap_tag_outputs(sequence_output)
 
         # (deprecated) use CRF
-        if self.use_crf_topping:
+        # if self.use_crf_topping:
+        #
+        #     if self.tag_regression:
+        #         # need to transfer probs to logits
+        #         source_tag_logits = torch.cat((1 - source_tag_logits, source_tag_logits), dim=-1)
+        #         mt_tag_logits = torch.cat((1 - mt_tag_logits, mt_tag_logits), dim=-1)
+        #
+        #     best_source_tags = self.source_qe_tag_crf.viterbi_tags(source_tag_logits, source_tag_masks, top_k=1)
+        #     best_mt_tags = self.mt_qe_tag_crf.viterbi_tags(mt_tag_logits, mt_tag_masks, top_k=1)
+        #
+        #     # change predictions from viterbi to 0,1 distribution in order to adapt the output to following steps
+        #     new_source_tag_logits = torch.zeros_like(source_tag_logits)
+        #     for i, instance in enumerate(best_source_tags):
+        #         for j, tag_id in enumerate(instance[0][0]):
+        #             new_source_tag_logits[i, j, int(tag_id)] = 1
+        #
+        #     new_mt_tag_logits = torch.zeros_like(mt_tag_logits)
+        #     for i, instance in enumerate(best_mt_tags):
+        #         for j, tag_id in enumerate(instance[0][0]):
+        #             new_mt_tag_logits[i, j, int(tag_id)] = 1
+        #
+        #     if tag_labels is not None:
+        #         source_log_likelihood = self.source_qe_tag_crf(source_tag_logits, tag_labels, source_tag_masks)
+        #         mt_log_likelihood = self.mt_qe_tag_crf(mt_tag_logits, tag_labels, mt_tag_masks)
+        #
+        #         batch_size = sequence_output.shape[0]
+        #         source_tag_loss = -source_log_likelihood / batch_size
+        #         mt_tag_loss = -mt_log_likelihood / batch_size
+        #
+        #         total_loss = source_tag_loss + mt_tag_loss
+        #
+        #     output = ((new_source_tag_logits, new_mt_tag_logits), ) + outputs[2:]
+        #     return ((total_loss, ) + output) if total_loss is not None else output
 
-            if self.tag_regression:
-                # need to transfer probs to logits
-                source_tag_logits = torch.cat((1 - source_tag_logits, source_tag_logits), dim=-1)
-                mt_tag_logits = torch.cat((1 - mt_tag_logits, mt_tag_logits), dim=-1)
+        if word_tag_labels is not None:
 
-            best_source_tags = self.source_qe_tag_crf.viterbi_tags(source_tag_logits, source_tag_masks, top_k=1)
-            best_mt_tags = self.mt_qe_tag_crf.viterbi_tags(mt_tag_logits, mt_tag_masks, top_k=1)
-
-            # change predictions from viterbi to 0,1 distribution in order to adapt the output to following steps
-            new_source_tag_logits = torch.zeros_like(source_tag_logits)
-            for i, instance in enumerate(best_source_tags):
-                for j, tag_id in enumerate(instance[0][0]):
-                    new_source_tag_logits[i, j, int(tag_id)] = 1
-
-            new_mt_tag_logits = torch.zeros_like(mt_tag_logits)
-            for i, instance in enumerate(best_mt_tags):
-                for j, tag_id in enumerate(instance[0][0]):
-                    new_mt_tag_logits[i, j, int(tag_id)] = 1
-
-            if tag_labels is not None:
-                source_log_likelihood = self.source_qe_tag_crf(source_tag_logits, tag_labels, source_tag_masks)
-                mt_log_likelihood = self.mt_qe_tag_crf(mt_tag_logits, tag_labels, mt_tag_masks)
-
-                batch_size = sequence_output.shape[0]
-                source_tag_loss = -source_log_likelihood / batch_size
-                mt_tag_loss = -mt_log_likelihood / batch_size
-
-                total_loss = source_tag_loss + mt_tag_loss
-
-            output = ((new_source_tag_logits, new_mt_tag_logits), ) + outputs[2:]
-            return ((total_loss, ) + output) if total_loss is not None else output
-
-        if tag_labels is not None:
-            qe_tag_labels, qe_gap_tag_labels = tag_labels
             # loss for regression
             if self.tag_regression:
                 bce = BCELoss(reduction='sum')
@@ -1304,67 +1335,63 @@ class BertForQETagClassification(BertPreTrainedModel):
                     #     mt_tag_masks = new_mt_tag_masks
 
                     source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 0.0)
-                    mt_active_logits = mt_tag_logits.squeeze(-1).masked_fill(~mt_tag_masks, 0.0)
+                    mt_word_active_logits = mt_word_tag_logits.squeeze(-1).masked_fill(~mt_word_tag_masks, 0.0)
 
                     source_tag_loss = bce(source_active_logits,
-                                          qe_tag_labels.masked_fill(~source_tag_masks, 0).type(torch.float))
-                    mt_tag_loss = bce(mt_active_logits,
-                                      qe_tag_labels.masked_fill(~mt_tag_masks, 0).type(torch.float))
+                                          word_tag_labels.masked_fill(~source_tag_masks, 0).type(torch.float))
+                    mt_word_tag_loss = bce(mt_word_active_logits,
+                                      word_tag_labels.masked_fill(~mt_word_tag_masks, 0).type(torch.float))
 
-                    gap_tag_loss = None
-                    if qe_gap_tag_labels is not None:
+                    mt_gap_tag_loss = None
+                    if gap_tag_labels is not None:
                         mt_gap_active_logits = mt_gap_tag_logits.squeeze(-1).masked_fill(~mt_gap_tag_masks, 0.0)
-                        gap_tag_loss = bce(mt_gap_active_logits,
-                                          qe_gap_tag_labels.masked_fill(~mt_gap_tag_masks, 0).type(torch.float))
+                        mt_gap_tag_loss = bce(mt_gap_active_logits,
+                                          gap_tag_labels.masked_fill(~mt_gap_tag_masks, 0).type(torch.float))
 
                 else:
                     # (DEPRECATED)
                     batch_size, seq_len = source_tag_masks.shape
                     src_mask_exp = (~source_tag_masks).unsqueeze(-1).expand(batch_size, seq_len, self.num_label)
-                    mt_mask_exp = (~mt_tag_masks).unsqueeze(-1).expand(batch_size, seq_len, self.num_label)
+                    mt_mask_exp = (~mt_word_tag_masks).unsqueeze(-1).expand(batch_size, seq_len, self.num_label)
 
                     source_active_logits = source_tag_logits.masked_fill(src_mask_exp, 0.0)
                     source_tag_loss = bce(source_active_logits,
-                                          tag_labels.masked_fill(src_mask_exp, 0).type(torch.float))
+                                          word_tag_labels.masked_fill(src_mask_exp, 0).type(torch.float))
 
-                    mt_active_logits = mt_tag_logits.masked_fill(mt_mask_exp, 0.0)
-                    mt_tag_loss = bce(mt_active_logits,
-                                      tag_labels.masked_fill(mt_mask_exp, 0).type(torch.float))
-
-                    gap_tag_loss = None
-
+                    mt_word_active_logits = mt_word_tag_logits.masked_fill(mt_mask_exp, 0.0)
+                    mt_word_tag_loss = bce(mt_word_active_logits,
+                                      word_tag_labels.masked_fill(mt_mask_exp, 0).type(torch.float))
+                    mt_gap_tag_loss = None
 
                 # mean the loss
                 source_tag_loss /= source_tag_masks.sum()
-                mt_tag_loss /= mt_tag_masks.sum()
-                if gap_tag_loss is not None:
-                    gap_tag_loss /= gap_tag_loss.sum()
+                mt_word_tag_loss /= mt_word_tag_masks.sum()
+                if mt_gap_tag_loss is not None:
+                    mt_gap_tag_loss /= mt_gap_tag_loss.sum()
 
             # loss for classification
             else:
                 loss_fct = CrossEntropyLoss()
 
-                source_active_tag_labels = torch.where(source_tag_masks.view(-1), qe_tag_labels.view(-1),
-                                                       torch.tensor(loss_fct.ignore_index).type_as(qe_tag_labels))
-                mt_active_tag_labels = torch.where(mt_tag_masks.view(-1), qe_tag_labels.view(-1),
-                                                   torch.tensor(loss_fct.ignore_index).type_as(qe_tag_labels))
+                source_active_tag_labels = torch.where(source_tag_masks.view(-1), word_tag_labels.view(-1),
+                                                       torch.tensor(loss_fct.ignore_index).type_as(word_tag_labels))
+                word_active_tag_labels = torch.where(mt_word_tag_masks.view(-1), word_tag_labels.view(-1),
+                                                   torch.tensor(loss_fct.ignore_index).type_as(word_tag_labels))
                 source_tag_loss = loss_fct(source_tag_logits.view(-1, 2), source_active_tag_labels)
-                mt_tag_loss = loss_fct(mt_tag_logits.view(-1, 2), mt_active_tag_labels)
+                mt_word_tag_loss = loss_fct(mt_word_tag_logits.view(-1, 2), word_active_tag_labels)
 
-                gap_tag_loss = None
-                if qe_gap_tag_labels:
-                    gap_active_tag_labels = torch.where(mt_tag_masks.view(-1), qe_gap_tag_labels.view(-1),
-                                                        torch.tensor(loss_fct.ignore_index).type_as(qe_gap_tag_labels))
-                    gap_tag_loss = loss_fct(mt_gap_tag_logits.view(-1, 2), gap_active_tag_labels)
+                mt_gap_tag_loss = None
+                if gap_tag_labels:
+                    gap_active_tag_labels = torch.where(mt_gap_tag_masks.view(-1), gap_tag_labels.view(-1),
+                                                        torch.tensor(loss_fct.ignore_index).type_as(gap_tag_labels))
+                    mt_gap_tag_loss = loss_fct(mt_gap_tag_logits.view(-1, 2), gap_active_tag_labels)
 
-            total_loss = source_tag_loss + mt_tag_loss
-            if gap_tag_loss is not None:
-                total_loss += gap_tag_loss
+            total_loss = source_tag_loss + mt_word_tag_loss
+            if mt_gap_tag_loss is not None:
+                total_loss += mt_gap_tag_loss
 
-
-        output = ((source_tag_logits, mt_tag_logits, mt_gap_tag_logits),) + outputs[2:]
+        output = ((source_tag_logits, mt_word_tag_logits, mt_gap_tag_logits),) + outputs[2:]
         return ((total_loss,) + output) if total_loss is not None else output
-
 
 #############################################################
 #
@@ -1423,11 +1450,6 @@ class ModelArguments:
                           'counted into loss. During predicting, the model predicts the binary probability of being '
                           'one tag or the other.'}
     )
-    with_gap_tag_prediction: bool = field(
-        default=False,
-        metadata={"help": "Set this flag to add an extra linear transforming layer upon the output of every token at "
-                          "MT side, predicting gap tags."}
-    )
     '''
     ========================================================================================
       @wyzypa End.
@@ -1443,13 +1465,17 @@ class DataTrainingArguments:
     mt_text: str = field(
         metadata={'help': 'Path to the MT text file.'}
     )
-    source_qe_tags: str = field(
+    source_tags: str = field(
         default=None,
         metadata={'help': 'Path to the source QE tags file.'}
     )
-    mt_qe_tags: str = field(
+    mt_word_tags: str = field(
         default=None,
         metadata={'help': 'Path to the MT QE tags file.'}
+    )
+    mt_gap_tags: str = field(
+        default=None,
+        metadata={'help': 'Path to the MT Gap tags file.'}
     )
 
     max_seq_length: int = field(
@@ -1563,7 +1589,6 @@ def main():
       20201031 add extra arguments into config object
       20201102 tag_regression included
       20201120 pair_wise_regression included
-      20210507 with_gap_tag_prediction included
     =================================================================================
     '''
     if not hasattr(config, 'use_crf_topping'):
@@ -1582,9 +1607,6 @@ def main():
 
     if not hasattr(config, 'pair_wise_regression'):
         config.pair_wise_regression = model_args.pair_wise_regression
-
-    if not hasattr(config, 'with_gap_tag_prediction'):
-        config.with_gap_tag_prediction = model_args.with_gap_tag_prediction
 
     '''
     =================================================================================
@@ -1652,9 +1674,15 @@ def main():
 
         return res
 
-    def map_tag_to_origin(text, tokenizer, tags):
+    def map_tag_to_origin(text, tokenizer, tags, pred_gap=False):
         pieced_to_origin_map = map_offset(text, tokenizer)
-        assert max(pieced_to_origin_map.keys()) == len(tags) - 1, f'Inconsistent num of tokens in case:\n{text}\n{tags}'
+        if pred_gap:
+            max_i = max(pieced_to_origin_map.keys())
+            max_v = max(pieced_to_origin_map.values())
+            assert max_i == len(tags) - 2, f'Inconsistent num of tokens in case:\n{text}\n{tags}'
+            pieced_to_origin_map[max_i + 1] = max_v + 1
+        else:
+            assert max(pieced_to_origin_map.keys()) == len(tags) - 1, f'Inconsistent num of tokens in case:\n{text}\n{tags}'
         new_tags = collections.defaultdict(list)
         for i, tag in enumerate(tags):
             new_tags[pieced_to_origin_map[i]].append(tag)
@@ -1683,7 +1711,10 @@ def main():
                 c = collections.Counter(new_tags[i])
                 res.append(c.most_common(1)[0][0])
 
-        assert len(res) == len(text.split())
+        if pred_gap:
+            assert len(res) == len(text.split()) + 1
+        else:
+            assert len(res) == len(text.split())
         return res
 
     # Initialize our Trainer
@@ -1707,10 +1738,13 @@ def main():
     if training_args.do_eval:
         test_dataset = eval_dataset
 
-        source_tag_predictions, mt_tag_predictions, source_tag_mask, mt_tag_mask, label_ids, metrics = \
-            trainer.predict(test_dataset)
+        source_tag_predictions, mt_word_tag_predictions, mt_gap_tag_predictions,\
+        source_tag_mask, mt_word_tag_mask, mt_gap_tag_mask, \
+        label_ids, metrics = trainer.predict(test_dataset)
+
         source_tag_preds = align_predictions(source_tag_predictions, source_tag_mask)
-        mt_tag_preds = align_predictions(mt_tag_predictions, mt_tag_mask)
+        mt_word_tag_preds = align_predictions(mt_word_tag_predictions, mt_word_tag_mask)
+        mt_gap_tag_preds = align_predictions(mt_gap_tag_predictions, mt_gap_tag_mask)
 
         orig_source_tag_preds = []
         with Path(data_args.source_text).open(encoding='utf-8') as f:
@@ -1718,18 +1752,23 @@ def main():
             for src_line, source_tag_pred in zip(src_lines, source_tag_preds):
                 orig_source_tag_preds.append(map_tag_to_origin(src_line, tokenizer, source_tag_pred))
 
-        orig_mt_tag_preds = []
+        orig_mt_word_tag_preds = []
+        orig_mt_gap_tag_preds = []
         with Path(data_args.mt_text).open(encoding='utf-8') as f:
             mt_lines = [l.strip() for l in f]
-            for mt_line, mt_tag_pred in zip(mt_lines, mt_tag_preds):
-                orig_mt_tag_preds.append(map_tag_to_origin(mt_line, tokenizer, mt_tag_pred))
+            for mt_line, mt_word_tag_pred, mt_gap_tag_pred in \
+                    zip(mt_lines, mt_word_tag_preds, mt_gap_tag_preds):
+                orig_mt_word_tag_preds.append(map_tag_to_origin(mt_line, tokenizer, mt_word_tag_pred))
+                orig_mt_gap_tag_preds.append(map_tag_to_origin(mt_line, tokenizer, mt_gap_tag_pred, pred_gap=True))
 
         if num_labels == 2:
             source_tag_res_file = os.path.join(training_args.output_dir, 'pred.source_tags')
-            mt_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags')
+            mt_word_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags')
+            mt_gap_tag_res_file = os.path.join(training_args.output_dir, 'pred.gap_tags')
         else:
             source_tag_res_file = os.path.join(training_args.output_dir, 'pred.source_tags.prob')
-            mt_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags.prob')
+            mt_word_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags.prob')
+            mt_gap_tag_res_file = os.path.join(training_args.output_dir, 'pred.gap_tags.prob')
 
         if trainer.is_world_master():
             if config.pair_wise_regression != '':
@@ -1742,13 +1781,19 @@ def main():
                     else:    # multi-label regression
                         f.write(' '.join(t for t in tags) + '\n')
 
-            with Path(mt_tag_res_file).open('w') as f:
-                for tags in orig_mt_tag_preds:
+            with Path(mt_word_tag_res_file).open('w') as f:
+                 for tags in orig_mt_word_tag_preds:
                     if num_labels == 2 or config.pair_wise_regression != '':  # binary regression or classification
                         f.write(' '.join(id_to_label[t] for t in tags) + '\n')
                     else:  # multi-label regression
                         f.write(' '.join(t for t in tags) + '\n')
 
+            with Path(mt_gap_tag_res_file).open('w') as f:
+                for tags in orig_mt_gap_tag_preds:
+                    if num_labels == 2 or config.pair_wise_regression != '':
+                        f.write(' '.join(id_to_label[t] for t in tags) + '\n')
+                    else:
+                        f.write(' '.join(t for t in tags) + '\n')
 
 if __name__ == "__main__":
     main()
