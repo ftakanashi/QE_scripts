@@ -1687,7 +1687,7 @@ def main():
 
         return res
 
-    def map_tag_to_origin(text, tokenizer, tags, pred='source'):
+    def map_tag_to_origin(text, tokenizer, tags, pred):
 
         assert pred in ('source', 'mt_word', 'mt_gap'), f'Invalid predicting flag {pred}.'
         if pred == 'source': threshold = data_args.source_prob_threshold
@@ -1769,7 +1769,7 @@ def main():
         with Path(data_args.source_text).open(encoding='utf-8') as f:
             src_lines = [l.strip() for l in f]
             for src_line, source_tag_pred in zip(src_lines, source_tag_preds):
-                orig_source_tag_preds.append(map_tag_to_origin(src_line, tokenizer, source_tag_pred))
+                orig_source_tag_preds.append(map_tag_to_origin(src_line, tokenizer, source_tag_pred, pred='source'))
 
         orig_mt_word_tag_preds = []
         orig_mt_gap_tag_preds = []
@@ -1777,8 +1777,8 @@ def main():
             mt_lines = [l.strip() for l in f]
             for mt_line, mt_word_tag_pred, mt_gap_tag_pred in \
                     zip(mt_lines, mt_word_tag_preds, mt_gap_tag_preds):
-                orig_mt_word_tag_preds.append(map_tag_to_origin(mt_line, tokenizer, mt_word_tag_pred))
-                orig_mt_gap_tag_preds.append(map_tag_to_origin(mt_line, tokenizer, mt_gap_tag_pred, pred_gap=True))
+                orig_mt_word_tag_preds.append(map_tag_to_origin(mt_line, tokenizer, mt_word_tag_pred, pred='mt_word'))
+                orig_mt_gap_tag_preds.append(map_tag_to_origin(mt_line, tokenizer, mt_gap_tag_pred, pred='mt_gap'))
 
         if num_labels == 2:
             source_tag_res_file = os.path.join(training_args.output_dir, 'pred.source_tags')
