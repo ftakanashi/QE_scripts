@@ -37,7 +37,9 @@ NOTE = \
     (DEPRECATED)--crf_learning_rate FLOAT
     --tag_regression    [set this flag to transfer classification topping to regression]
     (DEPRECATED)--pair_wise_regression TAG,TAG [set this flag to do pair-wise regression. Only valide when tag_regression is set]
-    --tag_prob_threshold FLOAT    [only required in testing for regression]
+    --source_prob_threshold FLOAT    [only required in testing for regression]
+    --mt_word_prob_threshold FLOAT    [only required in testing for regression]
+    --mt_gap_prob_threshold FLOAT    [only required in testing for regression]
     --tag_prob_pooling [mean,max,min]   [set the mode for pooling several token tags during prediction]
 '''
 
@@ -311,8 +313,9 @@ class QETagClassificationDataset(Dataset):
                 if max(len(qe_tag_encoding), len(qe_gap_tag_encoding)) > args.max_seq_length:
                     # seems source and mt will be truncated respectively to fit the max_seq_length requirement
                     # so it is hard to map offset in that case.
-                    raise ValueError(
-                        'I have not done the adaption to qe_tags_input when the text input exceeds max length')
+                    # raise ValueError(
+                    #     'I have not done the adaption to qe_tags_input when the text input exceeds max length')
+                    continue
 
 
                 # transfer tag index to one hot labels
@@ -345,7 +348,7 @@ class QETagClassificationDataset(Dataset):
             batch_word_tag_encoding = batch_gap_tag_encoding = [None for _ in examples]
 
         self.features = []
-        for i in range(len(examples)):
+        for i in range(len(batch_word_tag_encoding)):
             text_inputs = {k: batch_text_encoding[k][i] for k in batch_text_encoding}
             word_tag_labels = batch_word_tag_encoding[i]
             gap_tag_labels = batch_gap_tag_encoding[i]
@@ -1687,7 +1690,7 @@ def main():
 
         return res
 
-    def map_tag_to_origin(text, tokenizer, tags, pred):
+    def map_tag_to_origin(line_i, text, tokenizer, tags, pred):
 
         assert pred in ('source', 'mt_word', 'mt_gap'), f'Invalid predicting flag {pred}.'
         if pred == 'source': threshold = data_args.source_prob_threshold
@@ -1698,10 +1701,18 @@ def main():
         if pred == 'mt_gap':
             max_i = max(pieced_to_origin_map.keys())
             max_v = max(pieced_to_origin_map.values())
-            assert max_i == len(tags) - 2, f'Inconsistent num of tokens in case:\n{text}\n{tags}'
+            assert max_i >= len(tags) - 2, f'Inconsistent num of tokens in case:\n{text}\n{tags}'
+            if max_i > len(tags) - 2:
+                while max_i > len(tags) - 2:
+                    tags.append(0.0)
+                warnings.warn(f'Line[{line_i}] of [{pred}] seems too long so we have to append more OKs to match the case.')
             pieced_to_origin_map[max_i + 1] = max_v + 1
         else:
-            assert max(pieced_to_origin_map.keys()) == len(tags) - 1, f'Inconsistent num of tokens in case:\n{text}\n{tags}'
+            assert max(pieced_to_origin_map.keys()) >= len(tags) - 1, f'Inconsistent num of tokens in case:\n{text}\n{tags}'
+            if max(pieced_to_origin_map.keys()) > len(tags) - 1:
+                while max(pieced_to_origin_map.keys()) > len(tags) - 1:
+                    tags.append(0.0)
+                warnings.warn(f'Line[{line_i}] of [{pred}] seems too long so we have to append more OKs to match the case.')
         new_tags = collections.defaultdict(list)
         for i, tag in enumerate(tags):
             new_tags[pieced_to_origin_map[i]].append(tag)
@@ -1768,17 +1779,21 @@ def main():
         orig_source_tag_preds = []
         with Path(data_args.source_text).open(encoding='utf-8') as f:
             src_lines = [l.strip() for l in f]
+            line_i = 1
             for src_line, source_tag_pred in zip(src_lines, source_tag_preds):
-                orig_source_tag_preds.append(map_tag_to_origin(src_line, tokenizer, source_tag_pred, pred='source'))
+                orig_source_tag_preds.append(map_tag_to_origin(line_i, src_line, tokenizer, source_tag_pred, pred='source'))
+                line_i += 1
 
         orig_mt_word_tag_preds = []
         orig_mt_gap_tag_preds = []
         with Path(data_args.mt_text).open(encoding='utf-8') as f:
             mt_lines = [l.strip() for l in f]
+            line_i = 1
             for mt_line, mt_word_tag_pred, mt_gap_tag_pred in \
                     zip(mt_lines, mt_word_tag_preds, mt_gap_tag_preds):
-                orig_mt_word_tag_preds.append(map_tag_to_origin(mt_line, tokenizer, mt_word_tag_pred, pred='mt_word'))
-                orig_mt_gap_tag_preds.append(map_tag_to_origin(mt_line, tokenizer, mt_gap_tag_pred, pred='mt_gap'))
+                orig_mt_word_tag_preds.append(map_tag_to_origin(line_i, mt_line, tokenizer, mt_word_tag_pred, pred='mt_word'))
+                orig_mt_gap_tag_preds.append(map_tag_to_origin(line_i, mt_line, tokenizer, mt_gap_tag_pred, pred='mt_gap'))
+                line_i += 1
 
         if num_labels == 2:
             source_tag_res_file = os.path.join(training_args.output_dir, 'pred.source_tags')
