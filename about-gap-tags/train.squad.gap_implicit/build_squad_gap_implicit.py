@@ -60,6 +60,7 @@ def get_answer_info(context: str, start_tok_i: int, end_tok_i: int) -> Dict:
         answer_start += (len(context_tokens[i]) + 1)
 
     if start_tok_i == len(context_tokens):
+        answer_start -= 2
         answer_text = ''
     else:
         for i in range(start_tok_i, end_tok_i + 1):
