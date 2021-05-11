@@ -20,6 +20,7 @@ import json
 import random
 import sys
 
+from tqdm import tqdm
 
 def analyze_alignment(align_lines, opt):
     res = []
@@ -197,13 +198,16 @@ def reverse_align_lines(align_lines):
 
 def process(opt):
     with open(opt.src, 'r') as f:
+        print('Reading source...')
         src_lines = [l.strip() for l in f]
 
     with open(opt.tgt, 'r') as f:
+        print('Reading target...')
         tgt_lines = [l.strip() for l in f]
 
     if opt.align is not None:
         with open(opt.align, 'r') as f:
+            print('Reading alignment...')
             s2t_align_lines = [l.strip() for l in f]
 
         t2s_align_lines = reverse_align_lines(s2t_align_lines)
@@ -217,7 +221,7 @@ def process(opt):
     possible_count = impossible_count = 0
 
     data = []
-    for i, src_line in enumerate(src_lines):
+    for i, src_line in tqdm(enumerate(src_lines), mininterval=1.0):
         tgt_line = tgt_lines[i]
         s2t_align = s2t_aligns[i]
         t2s_align = t2s_aligns[i]

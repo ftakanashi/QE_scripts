@@ -231,6 +231,7 @@ def process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, ar
 def process(args):
     # Read in lines
     def read_fn(fn):
+        print(f'Reading {fn}...')
         with open(fn) as f:
             return [l.strip() for l in f]
 
@@ -256,7 +257,7 @@ def process(args):
     global possible_count
     global impossible_count
     possible_count, impossible_count = 0, 0
-    for src_line, mt_line, src_gap_align, src_mt_align in tqdm(zip(src_lines, mt_lines, src_gap_aligns, src_mt_aligns), mininterval=1.0, ncols=200):
+    for src_line, mt_line, src_gap_align, src_mt_align in tqdm(zip(src_lines, mt_lines, src_gap_aligns, src_mt_aligns), mininterval=1.0):
         s2t_res, t2s_res = process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, args)
         data_res.append(s2t_res)
         data_res.append(t2s_res)
