@@ -33,8 +33,10 @@ NOTE = \
     --mt_tags FILE    [only required during training]
     --valid_tags FILE
     --tag_regression    [set this flag to transfer classification topping to regression]
-    --word_tag_prob_threshold FLOAT    [only required in testing for regression]
-    --gap_tag_prob_threshold FLOAT    [only required in testing for regression]
+    --source_tag_prob_threshold FLOAT    [only required in testing for regression]
+    --mt_word_tag_prob_threshold FLOAT    [only required in testing for regression]
+    --mt_gap_tag_prob_threshold FLOAT    [only required in testing for regression]
+    --tag_prob_pooling [mean,min,max]    [only required in testing for regression]
 '''
 
 
@@ -823,17 +825,24 @@ class DataTrainingArguments:
       @wyzypa
       20201213 add arguments
       20201215 argument for gap symbol added
+      20210511 modify word_tag_prob_threshold to source_tag_prob_threshold & mt_word_tag_prob_threshold
+               add --tag_prob_pooling
     ================================================================================
     '''
-    word_tag_prob_threshold: float = field(
-        default=0.5,
-        metadata={"help": "The threshold for predicting word tags in regression mode. Only effective during prediction "
-                          "when --tag_regression is specified."}
+    source_tag_prob_threhsold: float = field(
+        default=0.45,
+        metadata={'help': 'Threshold for predicting source word tags in regression mode. '
+                          'Only effective during testing when --tag_regression is specified. Default:0.45'}
     )
-    gap_tag_prob_threshold: float = field(
-        default=0.5,
+    mt_word_tag_prob_threshold: float = field(
+        default=0.45,
+        metadata={'help': 'Threshold for predicting MT word tags in regression mode. '
+                          'Only effective during testing when --tag_regression is specified. Default: 0.45'}
+    )
+    mt_gap_tag_prob_threshold: float = field(
+        default=0.8,
         metadata={"help": "The threshold for predicting gapa tags in regression mode. Only effective during "
-                          "prediction when --tag_regression is speficied."}
+                          "prediction when --tag_regression is speficied. Default: 0.8"}
     )
     valid_tags: str = field(
         default=None,
@@ -843,6 +852,13 @@ class DataTrainingArguments:
     gap_symbol: str = field(
         default='[GAP]',
         metadata={'help': 'The symbol token for MT gaps.'}
+    )
+    tag_prob_pooling: str = field(
+        default='max',
+        metadata={
+            'help': 'Set a mode for pooling the probabilities during regression testing.',
+            'choices': ['mean', 'max', 'min']
+        }
     )
     '''
     ================================================================================
@@ -980,23 +996,34 @@ def main():
 
         return res
 
-    def map_tag_to_origin(text, tokenizer, tags):
+    def map_tag_to_origin(text, tokenizer, tags, pred):
         pieced_to_origin_map = map_offset(text, tokenizer)
         assert max(pieced_to_origin_map.keys()) == len(tags) - 1, f'Inconsistent num of tokens in case:\n{text}\n{tags}'
         new_tags = collections.defaultdict(list)
         for i, tag in enumerate(tags):
             new_tags[pieced_to_origin_map[i]].append(tag)
 
+        if pred == 'source': ths = data_args.source_tag_prob_threshold
+        elif pred == 'mt_word': ths = data_args.mt_word_tag_prob_threshold
+        else: raise ValueError(f'Invalid prediction mode {pred}.')
+
         res = []
         if config.tag_regression:
             for i in sorted(new_tags):
                 vs = new_tags[i]
-                mean_prob = sum(vs) / len(vs)
                 if num_labels == 2:
                     # output tag label text
-                    res_tag = 1 if mean_prob >= data_args.word_tag_prob_threshold else 0
+                    if data_args.tag_prob_pooling == 'max':
+                        res_tag = 1 if max(vs) >= ths else 0
+                    elif data_args.tag_prob_pooling == 'mean':
+                        mean_prob = sum(vs) / len(vs)
+                        res_tag = 1 if mean_prob >= ths else 0
+                    else:
+                        res_tag = 1 if min(vs) >= ths else 0
                 else:
-                    res_tag = '|'.join([str(f) for f in list(mean_prob)])
+                    # (DEPRECATED)
+                    res_tag = '|'.join([str(f) for f in list(sum(vs) / len(vs))])
+
                 res.append(res_tag)
 
         else:
@@ -1039,18 +1066,18 @@ def main():
         with Path(data_args.source_text).open(encoding='utf-8') as f:
             src_lines = [l.strip() for l in f]
             for src_line, source_tag_pred in zip(src_lines, source_tag_preds):
-                orig_source_tag_preds.append(map_tag_to_origin(src_line, tokenizer, source_tag_pred))
+                orig_source_tag_preds.append(map_tag_to_origin(src_line, tokenizer, source_tag_pred, pred='source'))
 
         orig_mt_word_tag_preds = []
         with Path(data_args.mt_text).open(encoding='utf-8') as f:
             mt_lines = [l.strip() for l in f]
             for mt_line, mt_tag_pred in zip(mt_lines, mt_word_tag_preds):
-                orig_mt_word_tag_preds.append(map_tag_to_origin(mt_line, tokenizer, mt_tag_pred))
+                orig_mt_word_tag_preds.append(map_tag_to_origin(mt_line, tokenizer, mt_tag_pred, pred='mt_word'))
 
         orig_mt_gap_tag_preds = []
         for mt_gap_tag_pred in mt_gap_tag_preds:
             orig_mt_gap_tag_preds.append(
-                [1 if p >= data_args.gap_tag_prob_threshold else 0 for p in mt_gap_tag_pred]
+                [1 if p >= data_args.mt_gap_tag_prob_threshold else 0 for p in mt_gap_tag_pred]
             )
 
         if num_labels == 2:
