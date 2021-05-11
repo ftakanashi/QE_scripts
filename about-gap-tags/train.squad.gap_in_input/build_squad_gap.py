@@ -94,6 +94,9 @@ def process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, ar
         gapped_mt_tokens.append(gap_token)
         gapped_mt_tokens.append(mt_tokens[i])
     gapped_mt_tokens.append(gap_token)
+    if len(src_tokens) + len(gapped_mt_tokens) > args.max_seq_length and src_gap_align is not None:
+        # ignore those too long examples for generating training data
+        return [], []
     gapped_mt_line = ' '.join(gapped_mt_tokens)
 
     gap_src_align = reverse_align(src_gap_align) if src_gap_align is not None else None
@@ -138,7 +141,7 @@ def process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, ar
                 elif args.no_aligned_gap_source_word_policy == 'empty':
                     s2t_qas.append(empty_record)
                     impossible_count += 1
-                elif args.no_aligned_gap_source_word_policy == 'src_mt':
+                elif args.no_aligned_gap_source_word_policy == 'align_to_word':
                     spans = point2span(src_mt_align[tok_id])
                     for span_id, span in enumerate(spans):
                         start_i, end_i = min(span) * 2 + 1, max(span) * 2 + 1
@@ -191,7 +194,7 @@ def process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, ar
                 elif args.no_aligned_gap_source_word_policy == 'empty':
                     t2s_qas.append(empty_record)
                     impossible_count += 1
-                elif args.no_aligned_gap_source_word_policy == 'src_mt':
+                elif args.no_aligned_gap_source_word_policy == 'align_to_word':
                     spans = point2span(mt_src_align[(tok_id - 1) // 2])
                     for span_id, span in enumerate(spans):
                         start_i, end_i = min(span), max(span)
@@ -242,8 +245,9 @@ def process(args):
     possible_count, impossible_count = 0, 0
     for src_line, mt_line, src_gap_align, src_mt_align in tqdm(zip(src_lines, mt_lines, src_gap_aligns, src_mt_aligns), mininterval=1.0):
         s2t_res, t2s_res = process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, args)
-        data_res.append(s2t_res)
-        data_res.append(t2s_res)
+        if len(s2t_res) > 0 and len(t2s_res) > 0:
+            data_res.append(s2t_res)
+            data_res.append(t2s_res)
         pair_id += 1
 
     return possible_count, impossible_count, data_res
@@ -258,17 +262,19 @@ def parse_args():
 
     parser.add_argument('-a', '--src_gap_align', default=None,
                         help='Path to the SOURCE-GAP alignment file.')
-    parser.add_argument('--no_aligned_gap_source_word_policy', choices=['skip', 'empty', 'src_mt'], default='skip',
+    parser.add_argument('--no_aligned_gap_source_word_policy', choices=['skip', 'empty', 'align_to_word'], default='skip',
                         help='Choose a mode determining whether adding a record of a source word without any aligned '
                              'gaps into the output. Note that it also affects the default mode for the t2s direciton.'
                              'Only valid when -a is specified generating training data. Default: skip.')
     parser.add_argument('--src_mt_align', default=None,
                         help='Path to the source-mt alignment. Required if no_aligned_gap_source_word_policy is set '
-                             'to src_mt.')
+                             'to align_to_word.')
 
     parser.add_argument('--gap_token', default='[GAP]', help='the token representing gaps. Default: [GAP]')
     parser.add_argument('--special_token', default='¶', help='a special token marking out corresponding word. '
                                                              'Default: ¶')
+    parser.add_argument('--max_seq_length', default=384, type=int,
+                        help='Specify a limit. All SRC + MT sequences whose length is greater then this will not be counted.')
 
     args = parser.parse_args()
 
@@ -276,9 +282,9 @@ def parse_args():
         assert args.src_mt_align is None, \
             'Are you generating test data since you did not set -a? If so, please do not set --src_mt_align since ' \
             'it\'s meanless.'
-    elif args.no_aligned_gap_source_word_policy == 'src_mt':
+    elif args.no_aligned_gap_source_word_policy == 'align_to_word':
         assert args.src_mt_align is not None, \
-            'You should specify SRC-MT alignment when no_aligned_gap_source_word_policy is src_mt.'
+            'You should specify SRC-MT alignment when no_aligned_gap_source_word_policy is align_to_word.'
 
     return args
 
