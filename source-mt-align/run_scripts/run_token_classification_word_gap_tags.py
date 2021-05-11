@@ -829,7 +829,7 @@ class DataTrainingArguments:
                add --tag_prob_pooling
     ================================================================================
     '''
-    source_tag_prob_threhsold: float = field(
+    source_tag_prob_threshold: float = field(
         default=0.45,
         metadata={'help': 'Threshold for predicting source word tags in regression mode. '
                           'Only effective during testing when --tag_regression is specified. Default:0.45'}
