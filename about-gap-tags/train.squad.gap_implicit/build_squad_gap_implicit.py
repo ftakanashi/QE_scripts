@@ -6,6 +6,7 @@ import bisect
 import collections
 import json
 
+from tqdm import tqdm
 from typing import *
 
 
@@ -255,7 +256,7 @@ def process(args):
     global possible_count
     global impossible_count
     possible_count, impossible_count = 0, 0
-    for src_line, mt_line, src_gap_align, src_mt_align in zip(src_lines, mt_lines, src_gap_aligns, src_mt_aligns):
+    for src_line, mt_line, src_gap_align, src_mt_align in tqdm(zip(src_lines, mt_lines, src_gap_aligns, src_mt_aligns), mininterval=1.0, ncols=200):
         s2t_res, t2s_res = process_one_pair(pair_id, src_line, mt_line, src_gap_align, src_mt_align, args)
         data_res.append(s2t_res)
         data_res.append(t2s_res)
