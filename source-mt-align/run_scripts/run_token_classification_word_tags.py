@@ -41,6 +41,7 @@ NOTE = \
     --mt_word_prob_threshold FLOAT    [only required in testing for regression]
     --mt_gap_prob_threshold FLOAT    [only required in testing for regression]
     --tag_prob_pooling [mean,max,min]   [set the mode for pooling several token tags during prediction]
+    --bad_loss_lambda FLOAT    [only optional in training]
 '''
 
 
@@ -1243,6 +1244,8 @@ class BertForQETagClassification(BertPreTrainedModel):
             self.mt_word_tag_outputs = nn.Linear(config.hidden_size, self.num_label)
             self.mt_gap_tag_outputs = nn.Linear(config.hidden_size, self.num_label)
 
+        self.bad_loss_lambda = config.bad_loss_lambda
+
         # (DEPRECATED)
         # self.use_crf_topping = config.use_crf_topping
         # if config.use_crf_topping:
@@ -1337,19 +1340,37 @@ class BertForQETagClassification(BertPreTrainedModel):
                     #     source_tag_masks = new_source_tag_masks
                     #     mt_tag_masks = new_mt_tag_masks
 
-                    source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 0.0)
-                    mt_word_active_logits = mt_word_tag_logits.squeeze(-1).masked_fill(~mt_word_tag_masks, 0.0)
+                    source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 0.0).view(-1)
+                    source_active_labels = word_tag_labels.masked_fill(~source_tag_masks, 0).type(torch.float).view(-1)
+                    if self.bad_loss_lambda != 1.0:
+                        bce = BCELoss(reduction='sum',
+                                      weight=source_active_labels * self.bad_loss_lambda)    # BAD本身tag是1，所以labels直接乘以lambda即可
+                    source_tag_loss = bce(source_active_logits, source_active_labels)
+                    # source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 0.0)
+                    # source_tag_loss = bce(source_active_logits,
+                    #                       word_tag_labels.masked_fill(~source_tag_masks, 0).type(torch.float))
 
-                    source_tag_loss = bce(source_active_logits,
-                                          word_tag_labels.masked_fill(~source_tag_masks, 0).type(torch.float))
-                    mt_word_tag_loss = bce(mt_word_active_logits,
-                                      word_tag_labels.masked_fill(~mt_word_tag_masks, 0).type(torch.float))
+                    mt_word_active_logits = mt_word_tag_logits.squeeze(-1).masked_fill(~mt_word_tag_masks, 0.0).view(-1)
+                    mt_word_active_labels = word_tag_labels.masked_fill(~mt_word_tag_masks, 0).type(torch.float).view(-1)
+                    if self.bad_loss_lambda != 1.0:
+                        bce = BCELoss(reduction='sum',
+                                      weight=mt_word_active_labels * self.bad_loss_lambda)    # BAD本身tag是1，所以labels直接乘以lambda即可
+                    mt_word_tag_loss = bce(mt_word_active_logits, mt_word_active_labels)
+                    # mt_word_active_logits = mt_word_tag_logits.squeeze(-1).masked_fill(~mt_word_tag_masks, 0.0)
+                    # mt_word_tag_loss = bce(mt_word_active_logits,
+                    #                   word_tag_labels.masked_fill(~mt_word_tag_masks, 0).type(torch.float))
 
                     mt_gap_tag_loss = None
                     if gap_tag_labels is not None:
-                        mt_gap_active_logits = mt_gap_tag_logits.squeeze(-1).masked_fill(~mt_gap_tag_masks, 0.0)
-                        mt_gap_tag_loss = bce(mt_gap_active_logits,
-                                          gap_tag_labels.masked_fill(~mt_gap_tag_masks, 0).type(torch.float))
+                        mt_gap_active_logits = mt_gap_tag_logits.squeeze(-1).masked_fill(~mt_gap_tag_masks, 0.0).view(-1)
+                        mt_gap_active_labels = gap_tag_labels.masked_fill(~mt_gap_tag_masks, 0).type(torch.float).view(-1)
+                        if self.bad_loss_lambda != 1.0:
+                            bce = BCELoss(reduction='sum',
+                                          weight=mt_gap_active_labels * self.bad_loss_lambda)
+                        mt_gap_tag_loss = bce(mt_gap_active_logits, mt_gap_active_labels)
+                        # mt_gap_active_logits = mt_gap_tag_logits.squeeze(-1).masked_fill(~mt_gap_tag_masks, 0.0)
+                        # mt_gap_tag_loss = bce(mt_gap_active_logits,
+                        #                   gap_tag_labels.masked_fill(~mt_gap_tag_masks, 0).type(torch.float))
 
                 else:
                     # (DEPRECATED)
@@ -1434,7 +1455,7 @@ class ModelArguments:
       20201031 add argument for CRF
       20201102 add argument for regression
       20201120 add argument for pair-wise regression
-      20210507 add argument for gap tag prediction
+      20210514 add bad_loss_lambda
     ========================================================================================
     '''
     use_crf_topping: bool = field(
@@ -1452,6 +1473,10 @@ class ModelArguments:
                           'in valid tags splited by an English comma. During training only these two tags are '
                           'counted into loss. During predicting, the model predicts the binary probability of being '
                           'one tag or the other.'}
+    )
+    bad_loss_lambda: float = field(
+        default=1.0,
+        metadata={"help": "A lambda factor justifying loss where tag is BAD."}
     )
     '''
     ========================================================================================
@@ -1605,6 +1630,7 @@ def main():
       20201031 add extra arguments into config object
       20201102 tag_regression included
       20201120 pair_wise_regression included
+      20210514 bad_loss_lambda included
     =================================================================================
     '''
     if not hasattr(config, 'use_crf_topping'):
@@ -1623,6 +1649,9 @@ def main():
 
     if not hasattr(config, 'pair_wise_regression'):
         config.pair_wise_regression = model_args.pair_wise_regression
+
+    if not hasattr(config, 'bad_loss_lambda'):
+        config.bad_loss_lambda = model_args.bad_loss_lambda
 
     '''
     =================================================================================
