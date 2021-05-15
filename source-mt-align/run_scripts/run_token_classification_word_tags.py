@@ -1343,8 +1343,9 @@ class BertForQETagClassification(BertPreTrainedModel):
                     source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 0.0).view(-1)
                     source_active_labels = word_tag_labels.masked_fill(~source_tag_masks, 0).type(torch.float).view(-1)
                     if self.bad_loss_lambda != 1.0:
-                        bce = BCELoss(reduction='sum',
-                                      weight=source_active_labels * self.bad_loss_lambda)    # BAD本身tag是1，所以labels直接乘以lambda即可
+                        source_bad_weight = torch.ones_like(source_active_labels).\
+                            masked_fill_(source_active_labels.type(torch.bool), self.bad_loss_lambda)
+                        bce = BCELoss(reduction='sum', weight=source_bad_weight)
                     source_tag_loss = bce(source_active_logits, source_active_labels)
                     # source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 0.0)
                     # source_tag_loss = bce(source_active_logits,
@@ -1353,8 +1354,9 @@ class BertForQETagClassification(BertPreTrainedModel):
                     mt_word_active_logits = mt_word_tag_logits.squeeze(-1).masked_fill(~mt_word_tag_masks, 0.0).view(-1)
                     mt_word_active_labels = word_tag_labels.masked_fill(~mt_word_tag_masks, 0).type(torch.float).view(-1)
                     if self.bad_loss_lambda != 1.0:
-                        bce = BCELoss(reduction='sum',
-                                      weight=mt_word_active_labels * self.bad_loss_lambda)    # BAD本身tag是1，所以labels直接乘以lambda即可
+                        mt_word_bad_weight = torch.ones_like(mt_word_active_labels).\
+                            masked_fill_(mt_word_active_labels.type(torch.bool), self.bad_loss_lambda)
+                        bce = BCELoss(reduction='sum', weight=mt_word_bad_weight)
                     mt_word_tag_loss = bce(mt_word_active_logits, mt_word_active_labels)
                     # mt_word_active_logits = mt_word_tag_logits.squeeze(-1).masked_fill(~mt_word_tag_masks, 0.0)
                     # mt_word_tag_loss = bce(mt_word_active_logits,
@@ -1365,8 +1367,9 @@ class BertForQETagClassification(BertPreTrainedModel):
                         mt_gap_active_logits = mt_gap_tag_logits.squeeze(-1).masked_fill(~mt_gap_tag_masks, 0.0).view(-1)
                         mt_gap_active_labels = gap_tag_labels.masked_fill(~mt_gap_tag_masks, 0).type(torch.float).view(-1)
                         if self.bad_loss_lambda != 1.0:
-                            bce = BCELoss(reduction='sum',
-                                          weight=mt_gap_active_labels * self.bad_loss_lambda)
+                            mt_gap_bad_weight = torch.ones_like(mt_gap_active_labels).\
+                                masked_fill_(mt_gap_active_labels.type(torch.bool), self.bad_loss_lambda)
+                            bce = BCELoss(reduction='sum', weight=mt_gap_bad_weight)
                         mt_gap_tag_loss = bce(mt_gap_active_logits, mt_gap_active_labels)
                         # mt_gap_active_logits = mt_gap_tag_logits.squeeze(-1).masked_fill(~mt_gap_tag_masks, 0.0)
                         # mt_gap_tag_loss = bce(mt_gap_active_logits,
@@ -1391,7 +1394,7 @@ class BertForQETagClassification(BertPreTrainedModel):
                 source_tag_loss /= source_tag_masks.sum()
                 mt_word_tag_loss /= mt_word_tag_masks.sum()
                 if mt_gap_tag_loss is not None:
-                    mt_gap_tag_loss /= mt_gap_tag_loss.sum()
+                    mt_gap_tag_loss /= mt_gap_tag_masks.sum()
 
             # loss for classification
             else:
