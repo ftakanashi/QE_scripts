@@ -44,7 +44,7 @@ NOTE = \
     --bad_loss_lambda FLOAT    [only optional in training]
 '''
 
-
+import datetime
 import logging
 import os
 from dataclasses import dataclass, field
@@ -1560,7 +1560,7 @@ class DataTrainingArguments:
                           'frequently used tag is recommended to be placed at first.'}
     )
     tag_prob_pooling: str = field(
-        default='mean',
+        default='max',
         metadata={
             'help': 'Pooling method to merge several token tags into a word tag.',
             'choices': ['mean', 'max', 'min']
@@ -1860,6 +1860,16 @@ def main():
                         f.write(' '.join(id_to_label[t] for t in tags) + '\n')
                     else:
                         f.write(' '.join(t for t in tags) + '\n')
+
+            with Path(os.path.join(training_args.output_dir, 'gen_config.json')).open('w') as f:
+                info = {
+                    'time': datetime.datetime.now().strftime('%Y%m%d %H:%M:%S'),
+                    'source_prob_threshold': data_args.source_prob_threshold,
+                    'mt_word_prob_threshold': data_args.mt_word_prob_threshold,
+                    'mt_gap_prob_threshold': data_args.mt_gap_prob_threshold
+                }
+                for k, v in info.items():
+                    f.write(f'{k}: {v}\n')
 
 if __name__ == "__main__":
     main()
