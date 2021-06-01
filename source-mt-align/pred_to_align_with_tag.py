@@ -19,7 +19,9 @@ NOTE = \
 
 import argparse
 import collections
+import datetime
 import json
+import os
 
 from tqdm import tqdm
 
@@ -162,6 +164,16 @@ def main():
         for sent_id in tqdm(sorted(tgt_tag_info), mininterval=1.0, ncols=50, desc='Extracting Target QE Tags information'):
             wf.write(' '.join([tgt_tag_info[sent_id][word_id] for word_id in sorted(tgt_tag_info[sent_id])]) + '\n')
         wf.close()
+
+
+    info = {
+        'time': datetime.datetime.now().strftime('%Y%m%d %H:%M:%S'),
+        'align_prob_threshold': args.align_prob_threshold,
+        'tag_prob_threhsold': args.tag_prob_threshold,
+    }
+    with open(os.path.join(os.path.dirname(args.tgt_tags_output), 'gen_config.json'), 'w') as wf:
+        for k, v in info.items():
+            wf.write(f'{k}: {v}\n')
 
 
 if __name__ == '__main__':

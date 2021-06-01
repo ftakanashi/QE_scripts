@@ -173,20 +173,20 @@ def parse_args():
     parser.add_argument('-op', '--output_prefix', help='Prefix (including directory) of all output files.')
 
     parser.add_argument('--replace_prob', type=float, default=0.3,
-                        help='Probability of replacement noise.')
+                        help='Probability of replacement noise. Default: 0.3')
     parser.add_argument('--drop_source_prob', type=float, default=0.1,
-                        help='Probability of drop source word noise.')
+                        help='Probability of drop source word noise. Default: 0.1')
     parser.add_argument('--drop_target_prob', type=float, default=0.1,
-                        help='Probability of drop target word noise.')
+                        help='Probability of drop target word noise. Default: 0.1')
 
     parser.add_argument('--target_vocab', default=None, help='Provide the vocabulary file of target language for '
                                                              'replacement noise. If None, a vocabulary is automatically '
                                                              'generated based on the provided target corpus.')
 
     parser.add_argument('--default_source_tag', type=str,
-                        default='OK', help='Default tag for non-aligned source words.')
+                        default='OK', help='Default tag for non-aligned source words. Default: OK')
     parser.add_argument('--default_mt_word_tag', type=str,
-                        default='OK', help='Default tag for non-aligned PE words.')
+                        default='OK', help='Default tag for non-aligned PE words. Default: OK')
 
     args = parser.parse_args()
 
