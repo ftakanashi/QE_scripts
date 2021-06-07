@@ -412,7 +412,7 @@ from transformers.modeling_bert import BertModel, BertPreTrainedModel
 from transformers.trainer import Trainer
 from transformers.optimization import AdamW, get_linear_schedule_with_warmup
 from tqdm import tqdm
-# from typing import Union, Any, NamedTuple, List, Tuple, Optional
+from typing import Union, Any, NamedTuple, List, Tuple, Optional
 
 
 class QETagClassificationPredictionOutput(NamedTuple):
