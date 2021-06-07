@@ -82,16 +82,17 @@ def map_offset_roberta(origin_text, tokenizer):
 
     res = [-1 for _ in range(len(pieced_tokens))]
     orig_i = 0
-    buffer = ''
+    orig_tok_split = tokenizer.tokenize(origin_tokens[0])
+    buffer = []
     for tok_i, pieced_token in enumerate(pieced_tokens):
-        if pieced_token == '▁': continue
-        if pieced_token[0] == '▁':
-            pieced_token = pieced_token[1:]
-        res[tok_i] = orig_i
-        buffer += pieced_token
-        if buffer == origin_tokens[orig_i]:
-            buffer = ''
+        res[tok_i] = orig_i if pieced_token != '▁' else -1
+        buffer.append(pieced_token)
+        if buffer == orig_tok_split:
             orig_i += 1
+            if orig_i == len(origin_tokens): break
+            orig_tok_split = tokenizer.tokenize(origin_tokens[orig_i])
+            buffer = []
+
     return res
 
 
@@ -297,7 +298,6 @@ class QETagClassificationDataset(Dataset):
 
             # get token type ids
             pivot1 = len(e.source_text.strip().split()) + 1
-            pivot2 = pivot1 + len(e.mt_text.strip().split()) + 2
             token_type_ids = []
             flag = 0
             for i in pieced_to_origin_mapping:
@@ -305,6 +305,11 @@ class QETagClassificationDataset(Dataset):
                 if i == pivot1: flag = 1
             while len(token_type_ids) < args.max_seq_length:
                 token_type_ids.append(0)
+            if 1 not in token_type_ids:
+                print(pieced_to_origin_mapping)
+                print(origin_text)
+                import sys
+                sys.exit(1)
             batch_token_type_ids.append(token_type_ids)
 
             if set_type != 'train':
