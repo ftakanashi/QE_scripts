@@ -160,6 +160,7 @@ class QETagClassificationProcessor(DataProcessor):
         self.source_tags = args.source_tags
         self.mt_word_tags = args.mt_word_tags
         self.mt_gap_tags = args.mt_gap_tags
+        self.mt_unk_token_repr = args.mt_unk_token_repr
 
     def get_examples(self, set_type):
 
@@ -199,6 +200,8 @@ class QETagClassificationProcessor(DataProcessor):
                                                                                             mt_word_tags_lines,
                                                                                             mt_gap_tags_lines):
             guid = f'{set_type}-{i}'
+            if self.mt_unk_token_repr is not None:
+                mt_line = mt_line.replace('[UNK]', self.mt_unk_token_repr)
             examples.append(
                 QETagClassificationInputExample(guid=guid, source_text=src_line, mt_text=mt_line,
                                                 source_tags=source_tags_line,
@@ -249,6 +252,7 @@ class QETagClassificationDataset(Dataset):
             origin_text = f'{tokenizer.cls_token} {e.source_text} {tokenizer.sep_token} {tokenizer.sep_token}' \
                           f' {e.mt_text} {tokenizer.sep_token}'
             pieced_to_origin_mapping = map_offset_roberta(origin_text, tokenizer)
+            if len(pieced_to_origin_mapping) > args.max_seq_length: continue
 
             # get token type ids
             pivot1 = len(e.source_text.strip().split()) + 1
@@ -854,6 +858,10 @@ class DataTrainingArguments:
     mt_gap_tags: str = field(
         default=None,
         metadata={'help': 'Path to the MT Gap tags file.'}
+    )
+    mt_unk_token_repr: str = field(
+        default=None,
+        metadata={'help': 'Replace all unknown tokens represented by [UNK] to the specified value.'}
     )
 
     max_seq_length: int = field(
