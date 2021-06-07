@@ -87,59 +87,13 @@ def map_offset_roberta(origin_text, tokenizer):
     for tok_i, pieced_token in enumerate(pieced_tokens):
         res[tok_i] = orig_i if pieced_token != '▁' else -1
         buffer.append(pieced_token)
-        if buffer == orig_tok_split:
+        if buffer == orig_tok_split or ''.join(buffer).replace('▁', '') == origin_tokens[orig_i]:
             orig_i += 1
             if orig_i == len(origin_tokens): break
             orig_tok_split = tokenizer.tokenize(origin_tokens[orig_i])
             buffer = []
 
     return res
-
-
-def map_offset_bert(origin_text, tokenizer):
-    orig_tokens = origin_text.split()
-    pieced_tokens = []
-    for token in tokenizer.tokenize(
-            origin_text, never_split=tokenizer.all_special_tokens):
-        wp_token = tokenizer.wordpiece_tokenizer.tokenize(token)
-        if '[UNK]' in wp_token:  # append the original token rather than UNK to avoid match error
-            assert len(wp_token) == 1, f'Token {token} is splited by wordpiece but still contains UNK??'
-            pieced_tokens.append(token)
-        else:
-            pieced_tokens.extend(wp_token)
-
-    mapping = {}
-    pieced_i = 0
-
-    for orig_i, orig_token in enumerate(orig_tokens):
-        tmp_token = pieced_tokens[pieced_i]
-
-        # normalize orig_token (lowercase, accent-norm. No punc-split-norm)
-        if orig_token not in tokenizer.all_special_tokens \
-                and orig_token not in tokenizer.basic_tokenizer.never_split:
-            # special tokens needs no normalization
-            if tokenizer.basic_tokenizer.do_lower_case:
-                orig_token = tokenizer.basic_tokenizer._run_strip_accents(orig_token)
-                orig_token = orig_token.lower()
-
-        # match!
-        while True:
-            mapping[pieced_i] = orig_i
-            pieced_i += 1
-            if tmp_token == orig_token:
-                break
-            else:
-                tmp_token += pieced_tokens[pieced_i].replace('##', '')
-
-            if len(tmp_token) > len(orig_token):  # error raising
-                msg = f'Original Text:  {" ".join(orig_tokens)}\n' \
-                      f'Pieced Text: {" ".join(pieced_tokens)}\n' \
-                      f'Original Token: {orig_token}\n' \
-                      f'Pieced Tmp Token: {tmp_token}\n' \
-                      f'Mapping: {mapping}'
-                raise ValueError('Maybe original tokens and pieced tokens does not match.\n' + msg)
-
-    return mapping
 
 
 def generate_source_and_mt_tag_mask(token_type_ids):
