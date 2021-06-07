@@ -22,7 +22,7 @@ NOTE = \
 
     
     A typical composition of arguments is like this:
-    --model_type bert --model_name_or_path model --do_train --source_text xxx --mt_text xxx --source_tags xxx 
+    --model_name_or_path model --do_train --source_text xxx --mt_text xxx --source_tags xxx 
     --mt_word_tags xxx --mt_gap_tags xxx --learning_rate 3e-5 --max_seq_length 384 --output_dir output --cache_dir output 
     --save_steps 1000 --num_train_epochs 5.0 --overwrite_cache --overwrite_output_dir
     
@@ -33,13 +33,10 @@ NOTE = \
     --mt_word_tags FILE    [only required in training]
     --mt_gap_tags FILE    [only requried in training]
     --valid_tags FILE    [if not set, OK/BAD is the default valid tags.]
-    (DEPRECATED)--use_crf_topping
-    (DEPRECATED)--crf_learning_rate FLOAT
-    --tag_regression    [set this flag to transfer classification topping to regression]
-    (DEPRECATED)--pair_wise_regression TAG,TAG [set this flag to do pair-wise regression. Only valide when tag_regression is set]
-    --source_prob_threshold FLOAT    [only required in testing for regression]
-    --mt_word_prob_threshold FLOAT    [only required in testing for regression]
-    --mt_gap_prob_threshold FLOAT    [only required in testing for regression]
+    
+    --source_prob_threshold FLOAT    [only required in testing]
+    --mt_word_prob_threshold FLOAT    [only required in testing]
+    --mt_gap_prob_threshold FLOAT    [only required in testing]
     --tag_prob_pooling [mean,max,min]   [set the mode for pooling several token tags during prediction]
     --bad_loss_lambda FLOAT    [only optional in training]
 '''
@@ -1209,48 +1206,22 @@ class BertForQETagClassification(BertPreTrainedModel):
 
         self.num_label = len(config.label2id)
         self.label2id = config.label2id
-        self.tag_regression = config.tag_regression
-        if config.tag_regression:
 
-            pair_wise_tags = config.pair_wise_regression.split(',')
-            if config.pair_wise_regression == '':
-                self.pair_wise_mode = False
-                self.pair_wise_tags = config.label2id.keys()
-            else:
-                assert len(self.label2id) > 2, 'You don\'t need to specify --pair_wise_regression because valid tags ' \
-                                               'are less than 2.'
-                assert len(pair_wise_tags) == 2, f'Must specify exact 2 tags. Got {len(pair_wise_tags)}'
-                for t in pair_wise_tags:
-                    assert t in config.label2id, f'pair-wise tag {t} not in valid tags: {config.label2id}'
-                self.pair_wise_mode = True
-                self.pair_wise_tags = pair_wise_tags
-                self.num_label = 2
-
-            num_label = 1 if self.num_label <= 2 else self.num_label
-            self.source_tag_outputs = nn.Sequential(
-                nn.Linear(config.hidden_size, num_label),
-                nn.Sigmoid()
-            )
-            self.mt_word_tag_outputs = nn.Sequential(
-                nn.Linear(config.hidden_size, num_label),
-                nn.Sigmoid()
-            )
-            self.mt_gap_tag_outputs = nn.Sequential(
-                nn.Linear(config.hidden_size, num_label),
-                nn.Sigmoid()
-            )
-        else:
-            self.source_tag_outputs = nn.Linear(config.hidden_size, self.num_label)
-            self.mt_word_tag_outputs = nn.Linear(config.hidden_size, self.num_label)
-            self.mt_gap_tag_outputs = nn.Linear(config.hidden_size, self.num_label)
+        num_label = 1 if self.num_label <= 2 else self.num_label
+        self.source_tag_outputs = nn.Sequential(
+            nn.Linear(config.hidden_size, num_label),
+            nn.Sigmoid()
+        )
+        self.mt_word_tag_outputs = nn.Sequential(
+            nn.Linear(config.hidden_size, num_label),
+            nn.Sigmoid()
+        )
+        self.mt_gap_tag_outputs = nn.Sequential(
+            nn.Linear(config.hidden_size, num_label),
+            nn.Sigmoid()
+        )
 
         self.bad_loss_lambda = config.bad_loss_lambda
-
-        # (DEPRECATED)
-        # self.use_crf_topping = config.use_crf_topping
-        # if config.use_crf_topping:
-        #     self.source_qe_tag_crf = ConditionalRandomField(self.num_label)
-        #     self.mt_qe_tag_crf = ConditionalRandomField(self.num_label)
 
     def forward(
             self,
@@ -1279,139 +1250,39 @@ class BertForQETagClassification(BertPreTrainedModel):
         mt_word_tag_logits = self.mt_word_tag_outputs(sequence_output)
         mt_gap_tag_logits = self.mt_gap_tag_outputs(sequence_output)
 
-        # (deprecated) use CRF
-        # if self.use_crf_topping:
-        #
-        #     if self.tag_regression:
-        #         # need to transfer probs to logits
-        #         source_tag_logits = torch.cat((1 - source_tag_logits, source_tag_logits), dim=-1)
-        #         mt_tag_logits = torch.cat((1 - mt_tag_logits, mt_tag_logits), dim=-1)
-        #
-        #     best_source_tags = self.source_qe_tag_crf.viterbi_tags(source_tag_logits, source_tag_masks, top_k=1)
-        #     best_mt_tags = self.mt_qe_tag_crf.viterbi_tags(mt_tag_logits, mt_tag_masks, top_k=1)
-        #
-        #     # change predictions from viterbi to 0,1 distribution in order to adapt the output to following steps
-        #     new_source_tag_logits = torch.zeros_like(source_tag_logits)
-        #     for i, instance in enumerate(best_source_tags):
-        #         for j, tag_id in enumerate(instance[0][0]):
-        #             new_source_tag_logits[i, j, int(tag_id)] = 1
-        #
-        #     new_mt_tag_logits = torch.zeros_like(mt_tag_logits)
-        #     for i, instance in enumerate(best_mt_tags):
-        #         for j, tag_id in enumerate(instance[0][0]):
-        #             new_mt_tag_logits[i, j, int(tag_id)] = 1
-        #
-        #     if tag_labels is not None:
-        #         source_log_likelihood = self.source_qe_tag_crf(source_tag_logits, tag_labels, source_tag_masks)
-        #         mt_log_likelihood = self.mt_qe_tag_crf(mt_tag_logits, tag_labels, mt_tag_masks)
-        #
-        #         batch_size = sequence_output.shape[0]
-        #         source_tag_loss = -source_log_likelihood / batch_size
-        #         mt_tag_loss = -mt_log_likelihood / batch_size
-        #
-        #         total_loss = source_tag_loss + mt_tag_loss
-        #
-        #     output = ((new_source_tag_logits, new_mt_tag_logits), ) + outputs[2:]
-        #     return ((total_loss, ) + output) if total_loss is not None else output
-
         if word_tag_labels is not None:
+            bce = BCELoss(reduction='sum')
+            source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 0.0).view(-1)
+            source_active_labels = word_tag_labels.masked_fill(~source_tag_masks, 0).type(torch.float).view(-1)
+            if self.bad_loss_lambda != 1.0:
+                source_bad_weight = torch.ones_like(source_active_labels).\
+                    masked_fill_(source_active_labels.type(torch.bool), self.bad_loss_lambda)
+                bce = BCELoss(reduction='sum', weight=source_bad_weight)
+            source_tag_loss = bce(source_active_logits, source_active_labels)
 
-            # loss for regression
-            if self.tag_regression:
-                bce = BCELoss(reduction='sum')
-                if self.num_label == 2:
+            mt_word_active_logits = mt_word_tag_logits.squeeze(-1).masked_fill(~mt_word_tag_masks, 0.0).view(-1)
+            mt_word_active_labels = word_tag_labels.masked_fill(~mt_word_tag_masks, 0).type(torch.float).view(-1)
+            if self.bad_loss_lambda != 1.0:
+                mt_word_bad_weight = torch.ones_like(mt_word_active_labels).\
+                    masked_fill_(mt_word_active_labels.type(torch.bool), self.bad_loss_lambda)
+                bce = BCELoss(reduction='sum', weight=mt_word_bad_weight)
+            mt_word_tag_loss = bce(mt_word_active_logits, mt_word_active_labels)
 
-                    # (deprecated)
-                    # if self.pair_wise_mode:
-                    #     assert tag_labels.ndim == 3, 'wired dimensions for tag_labels'
-                    #     backed = tag_labels.argmax(axis=-1)
-                    #     new_tag_labels = torch.zeros_like(backed)
-                    #     new_source_tag_masks = torch.zeros_like(source_tag_masks).type(torch.bool)
-                    #     new_mt_tag_masks = torch.zeros_like(mt_tag_masks).type(torch.bool)
-                    #     for i, tag in enumerate(self.pair_wise_tags):
-                    #         n = self.label2id[tag]
-                    #         new_tag_labels[backed == n] = i
-                    #         new_source_tag_masks[backed == n] = True
-                    #         new_mt_tag_masks[backed == n] = True
-                    #     new_source_tag_masks[source_tag_masks == False] = False
-                    #     new_mt_tag_masks[mt_tag_masks == False] = False
-                    #
-                    #     tag_labels = new_tag_labels
-                    #     source_tag_masks = new_source_tag_masks
-                    #     mt_tag_masks = new_mt_tag_masks
+            mt_gap_tag_loss = None
+            if gap_tag_labels is not None:
+                mt_gap_active_logits = mt_gap_tag_logits.squeeze(-1).masked_fill(~mt_gap_tag_masks, 0.0).view(-1)
+                mt_gap_active_labels = gap_tag_labels.masked_fill(~mt_gap_tag_masks, 0).type(torch.float).view(-1)
+                if self.bad_loss_lambda != 1.0:
+                    mt_gap_bad_weight = torch.ones_like(mt_gap_active_labels).\
+                        masked_fill_(mt_gap_active_labels.type(torch.bool), self.bad_loss_lambda)
+                    bce = BCELoss(reduction='sum', weight=mt_gap_bad_weight)
+                mt_gap_tag_loss = bce(mt_gap_active_logits, mt_gap_active_labels)
 
-                    source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 0.0).view(-1)
-                    source_active_labels = word_tag_labels.masked_fill(~source_tag_masks, 0).type(torch.float).view(-1)
-                    if self.bad_loss_lambda != 1.0:
-                        source_bad_weight = torch.ones_like(source_active_labels).\
-                            masked_fill_(source_active_labels.type(torch.bool), self.bad_loss_lambda)
-                        bce = BCELoss(reduction='sum', weight=source_bad_weight)
-                    source_tag_loss = bce(source_active_logits, source_active_labels)
-                    # source_active_logits = source_tag_logits.squeeze(-1).masked_fill(~source_tag_masks, 0.0)
-                    # source_tag_loss = bce(source_active_logits,
-                    #                       word_tag_labels.masked_fill(~source_tag_masks, 0).type(torch.float))
-
-                    mt_word_active_logits = mt_word_tag_logits.squeeze(-1).masked_fill(~mt_word_tag_masks, 0.0).view(-1)
-                    mt_word_active_labels = word_tag_labels.masked_fill(~mt_word_tag_masks, 0).type(torch.float).view(-1)
-                    if self.bad_loss_lambda != 1.0:
-                        mt_word_bad_weight = torch.ones_like(mt_word_active_labels).\
-                            masked_fill_(mt_word_active_labels.type(torch.bool), self.bad_loss_lambda)
-                        bce = BCELoss(reduction='sum', weight=mt_word_bad_weight)
-                    mt_word_tag_loss = bce(mt_word_active_logits, mt_word_active_labels)
-                    # mt_word_active_logits = mt_word_tag_logits.squeeze(-1).masked_fill(~mt_word_tag_masks, 0.0)
-                    # mt_word_tag_loss = bce(mt_word_active_logits,
-                    #                   word_tag_labels.masked_fill(~mt_word_tag_masks, 0).type(torch.float))
-
-                    mt_gap_tag_loss = None
-                    if gap_tag_labels is not None:
-                        mt_gap_active_logits = mt_gap_tag_logits.squeeze(-1).masked_fill(~mt_gap_tag_masks, 0.0).view(-1)
-                        mt_gap_active_labels = gap_tag_labels.masked_fill(~mt_gap_tag_masks, 0).type(torch.float).view(-1)
-                        if self.bad_loss_lambda != 1.0:
-                            mt_gap_bad_weight = torch.ones_like(mt_gap_active_labels).\
-                                masked_fill_(mt_gap_active_labels.type(torch.bool), self.bad_loss_lambda)
-                            bce = BCELoss(reduction='sum', weight=mt_gap_bad_weight)
-                        mt_gap_tag_loss = bce(mt_gap_active_logits, mt_gap_active_labels)
-                        # mt_gap_active_logits = mt_gap_tag_logits.squeeze(-1).masked_fill(~mt_gap_tag_masks, 0.0)
-                        # mt_gap_tag_loss = bce(mt_gap_active_logits,
-                        #                   gap_tag_labels.masked_fill(~mt_gap_tag_masks, 0).type(torch.float))
-
-                else:
-                    # (DEPRECATED)
-                    batch_size, seq_len = source_tag_masks.shape
-                    src_mask_exp = (~source_tag_masks).unsqueeze(-1).expand(batch_size, seq_len, self.num_label)
-                    mt_mask_exp = (~mt_word_tag_masks).unsqueeze(-1).expand(batch_size, seq_len, self.num_label)
-
-                    source_active_logits = source_tag_logits.masked_fill(src_mask_exp, 0.0)
-                    source_tag_loss = bce(source_active_logits,
-                                          word_tag_labels.masked_fill(src_mask_exp, 0).type(torch.float))
-
-                    mt_word_active_logits = mt_word_tag_logits.masked_fill(mt_mask_exp, 0.0)
-                    mt_word_tag_loss = bce(mt_word_active_logits,
-                                      word_tag_labels.masked_fill(mt_mask_exp, 0).type(torch.float))
-                    mt_gap_tag_loss = None
-
-                # mean the loss
-                source_tag_loss /= source_tag_masks.sum()
-                mt_word_tag_loss /= mt_word_tag_masks.sum()
-                if mt_gap_tag_loss is not None:
-                    mt_gap_tag_loss /= mt_gap_tag_masks.sum()
-
-            # loss for classification
-            else:
-                loss_fct = CrossEntropyLoss()
-
-                source_active_tag_labels = torch.where(source_tag_masks.view(-1), word_tag_labels.view(-1),
-                                                       torch.tensor(loss_fct.ignore_index).type_as(word_tag_labels))
-                word_active_tag_labels = torch.where(mt_word_tag_masks.view(-1), word_tag_labels.view(-1),
-                                                   torch.tensor(loss_fct.ignore_index).type_as(word_tag_labels))
-                source_tag_loss = loss_fct(source_tag_logits.view(-1, 2), source_active_tag_labels)
-                mt_word_tag_loss = loss_fct(mt_word_tag_logits.view(-1, 2), word_active_tag_labels)
-
-                mt_gap_tag_loss = None
-                if gap_tag_labels:
-                    gap_active_tag_labels = torch.where(mt_gap_tag_masks.view(-1), gap_tag_labels.view(-1),
-                                                        torch.tensor(loss_fct.ignore_index).type_as(gap_tag_labels))
-                    mt_gap_tag_loss = loss_fct(mt_gap_tag_logits.view(-1, 2), gap_active_tag_labels)
+            # mean the loss
+            source_tag_loss /= source_tag_masks.sum()
+            mt_word_tag_loss /= mt_word_tag_masks.sum()
+            if mt_gap_tag_loss is not None:
+                mt_gap_tag_loss /= mt_gap_tag_masks.sum()
 
             total_loss = source_tag_loss + mt_word_tag_loss
             if mt_gap_tag_loss is not None:
@@ -1431,18 +1302,12 @@ class ModelArguments:
     """
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
     """
-    model_type: str = field(
-        metadata={"help": "Type of model"}
-    )
     model_name_or_path: str = field(
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
     config_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
     )
-    # task_type: Optional[str] = field(
-    #     default="NER", metadata={"help": "Task type to fine tune in training (e.g. NER, POS, etc)"}
-    # )
     tokenizer_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
     )
@@ -1455,28 +1320,9 @@ class ModelArguments:
     '''
     ========================================================================================
       @wyzypa
-      20201031 add argument for CRF
-      20201102 add argument for regression
-      20201120 add argument for pair-wise regression
       20210514 add bad_loss_lambda
     ========================================================================================
     '''
-    use_crf_topping: bool = field(
-        default=False,
-        metadata={"help": "Set this flag to add CRF layers upon base bert rather than Linear Layers."}
-    )
-    tag_regression: bool = field(
-        default=False,
-        metadata={"help": "Set this flag to change the classification for top layers to regression (probability "
-                          "prediction). Note that only effective in 2-class tag classification."}
-    )
-    pair_wise_regression: str = field(
-        default='',
-        metadata={'help': 'only valid when --tag_regression is set. Specify a string containing two tags included '
-                          'in valid tags splited by an English comma. During training only these two tags are '
-                          'counted into loss. During predicting, the model predicts the binary probability of being '
-                          'one tag or the other.'}
-    )
     bad_loss_lambda: float = field(
         default=1.0,
         metadata={"help": "A lambda factor justifying loss where tag is BAD."}
@@ -1527,32 +1373,23 @@ class DataTrainingArguments:
     '''
     ================================================================================
       @wyzypa
-      20201103 add crf_learning_rate
       20201104 add tag_prob_threshold
       20201114 add valid_tags
       20210413 add tag_prob_pooling
       20210508 modify tag_prob_threshold to src_prob_threshold & mt_word_prob_threshold & mt_gap_prob_threshold
     ================================================================================
     '''
-    crf_learning_rate: float = field(
-        default=1e-3,
-        metadata={"help": "Learning rate for CRF topping layer. Only effective when --use_crf_topping is specified."}
-    )
-    # tag_prob_threshold: float = field(
-    #     default=0.5,
-    #     metadata={"help": "The threshold for predicting tag in regression mode. Only effective during prediction when --tag_regression is specified."}
-    # )
     source_prob_threshold: float = field(
         default=0.5,
-        metadata={"help": "The threshold for predicting source tags in regression mode. Only effective during testing when --tag_regression is specified"}
+        metadata={"help": "The threshold for predicting source tags in regression mode."}
     )
     mt_word_prob_threshold: float = field(
         default=0.5,
-        metadata={"help": "The threshold for predicting source tags in regression mode. Only effective during testing when --tag_regression is specified"}
+        metadata={"help": "The threshold for predicting source tags in regression mode."}
     )
     mt_gap_prob_threshold: float = field(
         default=0.9,
-        metadata={"help": "The threshold for predicting source tags in regression mode. Only effective during testing when --tag_regression is specified"}
+        metadata={"help": "The threshold for predicting source tags in regression mode."}
     )
     valid_tags: str = field(
         default=None,
@@ -1630,28 +1467,9 @@ def main():
     '''
     =================================================================================
       @wyzypa
-      20201031 add extra arguments into config object
-      20201102 tag_regression included
-      20201120 pair_wise_regression included
       20210514 bad_loss_lambda included
     =================================================================================
     '''
-    if not hasattr(config, 'use_crf_topping'):
-        config.use_crf_topping = model_args.use_crf_topping
-    elif config.use_crf_topping:
-        assert model_args.use_crf_topping is True, 'Please specify --use_crf_topping since your model has CRF topping layers'
-    else:
-        assert model_args.use_crf_topping is False, 'Please DO NOT specify --use_crf_topping since your model ' \
-                                                    'explicitly rejected CRF topping layers.'
-
-    training_args.crf_learning_rate = data_args.crf_learning_rate
-    delattr(data_args, 'crf_learning_rate')
-
-    if not hasattr(config, 'tag_regression'):
-        config.tag_regression = model_args.tag_regression
-
-    if not hasattr(config, 'pair_wise_regression'):
-        config.pair_wise_regression = model_args.pair_wise_regression
 
     if not hasattr(config, 'bad_loss_lambda'):
         config.bad_loss_lambda = model_args.bad_loss_lambda
@@ -1688,16 +1506,7 @@ def main():
     )
 
     def align_predictions(predictions: np.ndarray, mask: torch.Tensor) -> List[List[str]]:
-        regression_mode = config.tag_regression
-        if regression_mode:
-            if predictions.shape[-1] > 1:
-                # multi-label regression
-                preds = predictions
-            else:
-                preds = predictions.squeeze(-1)
-        else:
-            # classification
-            preds = np.argmax(predictions, axis=2)
+        preds = predictions.squeeze(-1)
 
         batch_size, max_len = preds.shape[:2]
         res = [[] for _ in range(batch_size)]
@@ -1705,20 +1514,12 @@ def main():
         mask = mask.cpu().numpy()
         preds[~mask] = -100
 
-        if preds.ndim == 2:
-            for i in range(batch_size):
-                for j in range(1, max_len):
-                    if preds[i, j] >= 0:
-                        res[i].append(preds[i, j])
-                    elif preds[i, j - 1] >= 0:
-                        break
-        else:
-            for i in range(batch_size):
-                for j in range(1, max_len):
-                    if preds[i, j].min() >= 0:
-                        res[i].append(preds[i, j])
-                    elif preds[i, j - 1].min() >= 0:
-                        break
+        for i in range(batch_size):
+            for j in range(1, max_len):
+                if preds[i, j] >= 0:
+                    res[i].append(preds[i, j])
+                elif preds[i, j - 1] >= 0:
+                    break
 
         return res
 
@@ -1750,28 +1551,19 @@ def main():
             new_tags[pieced_to_origin_map[i]].append(tag)
 
         res = []
-        if config.tag_regression:
-            for i in sorted(new_tags):
-                vs = new_tags[i]
+        for i in sorted(new_tags):
+            vs = new_tags[i]
 
-                if data_args.tag_prob_pooling == 'mean':
-                    prob = sum(vs) / len(vs)
-                elif data_args.tag_prob_pooling == 'max':
-                    prob = max(vs)
-                elif data_args.tag_prob_pooling == 'min':
-                    prob = min(vs)
+            if data_args.tag_prob_pooling == 'mean':
+                prob = sum(vs) / len(vs)
+            elif data_args.tag_prob_pooling == 'max':
+                prob = max(vs)
+            elif data_args.tag_prob_pooling == 'min':
+                prob = min(vs)
 
-                if num_labels == 2 or config.pair_wise_regression != '':
-                    # output tag label text
-                    res_tag = 1 if prob >= threshold else 0
-                else:
-                    res_tag = '|'.join([str(f) for f in list(prob)])
-                res.append(res_tag)
-
-        else:
-            for i in sorted(new_tags):
-                c = collections.Counter(new_tags[i])
-                res.append(c.most_common(1)[0][0])
+            # output tag label text
+            res_tag = 1 if prob >= threshold else 0
+            res.append(res_tag)
 
         if pred == 'mt_gap':
             assert len(res) == len(text.split()) + 1
@@ -1827,39 +1619,23 @@ def main():
                 orig_mt_gap_tag_preds.append(map_tag_to_origin(line_i, mt_line, tokenizer, mt_gap_tag_pred, pred='mt_gap'))
                 line_i += 1
 
-        if num_labels == 2:
-            source_tag_res_file = os.path.join(training_args.output_dir, 'pred.source_tags')
-            mt_word_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags')
-            mt_gap_tag_res_file = os.path.join(training_args.output_dir, 'pred.gap_tags')
-        else:
-            source_tag_res_file = os.path.join(training_args.output_dir, 'pred.source_tags.prob')
-            mt_word_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags.prob')
-            mt_gap_tag_res_file = os.path.join(training_args.output_dir, 'pred.gap_tags.prob')
+        source_tag_res_file = os.path.join(training_args.output_dir, 'pred.source_tags')
+        mt_word_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags')
+        mt_gap_tag_res_file = os.path.join(training_args.output_dir, 'pred.gap_tags')
 
         if trainer.is_world_master():
-            if config.pair_wise_regression != '':
-                id_to_label = {i: t for i, t in enumerate(config.pair_wise_regression.split(','))}
 
             with Path(source_tag_res_file).open('w') as f:
                 for tags in orig_source_tag_preds:
-                    if num_labels == 2 or config.pair_wise_regression != '':    # binary regression or classification
-                        f.write(' '.join(id_to_label[t] for t in tags) + '\n')
-                    else:    # multi-label regression
-                        f.write(' '.join(t for t in tags) + '\n')
+                    f.write(' '.join(id_to_label[t] for t in tags) + '\n')
 
             with Path(mt_word_tag_res_file).open('w') as f:
                  for tags in orig_mt_word_tag_preds:
-                    if num_labels == 2 or config.pair_wise_regression != '':  # binary regression or classification
-                        f.write(' '.join(id_to_label[t] for t in tags) + '\n')
-                    else:  # multi-label regression
-                        f.write(' '.join(t for t in tags) + '\n')
+                    f.write(' '.join(id_to_label[t] for t in tags) + '\n')
 
             with Path(mt_gap_tag_res_file).open('w') as f:
                 for tags in orig_mt_gap_tag_preds:
-                    if num_labels == 2 or config.pair_wise_regression != '':
-                        f.write(' '.join(id_to_label[t] for t in tags) + '\n')
-                    else:
-                        f.write(' '.join(t for t in tags) + '\n')
+                    f.write(' '.join(id_to_label[t] for t in tags) + '\n')
 
             with Path(os.path.join(training_args.output_dir, 'gen_config.json')).open('w') as f:
                 info = {

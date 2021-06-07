@@ -9,4 +9,4 @@ source-mt-align/run_scripts/tmp*
 source-pe-align/tmp*
 tmp*
 runs
-.DS_Store
+*.DS_Store*
