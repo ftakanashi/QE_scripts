@@ -34,6 +34,7 @@ NOTE = \
         --mt_gap_tags FILE    [only requried in training]
         --valid_tags FILE    [if not set, OK/BAD is the default valid tags.]
         
+        --output_prob    [set this flag then you don't need following threshold because probs are output]
         --source_prob_threshold FLOAT    [only required in testing for regression]
         --mt_word_prob_threshold FLOAT    [only required in testing for regression]
         --mt_gap_prob_threshold FLOAT    [only required in testing for regression]
@@ -830,7 +831,7 @@ class ModelArguments:
     '''
     bad_loss_lambda: float = field(
         default=1.0,
-        metadata={"help": "A lambda factor justifying loss where tag is BAD. Default: 0.1"}
+        metadata={"help": "A lambda factor justifying loss where tag is BAD. Default: 1.0"}
     )
     '''
     ========================================================================================

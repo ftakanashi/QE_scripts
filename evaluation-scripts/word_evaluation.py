@@ -12,6 +12,7 @@ TAG_OPTIONS = {
     'fine_grained': FG_TAGS
 }
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
 
@@ -23,6 +24,7 @@ def parse_args():
                         help='Select an evaluation mode.\nAvailable: fine_grained, original.\nDefault: original')
 
     return parser.parse_args()
+
 
 def check_file_exists(args):
     # assert os.path.isfile(args.reference_prefix + '.source_tags')
@@ -41,6 +43,7 @@ def check_file_exists(args):
         assert os.path.isfile(args.prediction_prefix + '.tags')
         res.append('.tags')
     return res
+
 
 def compute_scores(refe_fn, pred_fn, tag_opts, args):
     res = {}
@@ -81,11 +84,15 @@ def compute_scores(refe_fn, pred_fn, tag_opts, args):
         tp = fp = tn = fn = 0
         for pred_tag, ref_tag in zip(pred_tags, ref_tags):
             if pred_tag == pos_tag:
-                if ref_tag == pos_tag: tp += 1
-                else: fp += 1
+                if ref_tag == pos_tag:
+                    tp += 1
+                else:
+                    fp += 1
             else:
-                if ref_tag == pos_tag: fn += 1
-                else: tn += 1
+                if ref_tag == pos_tag:
+                    fn += 1
+                else:
+                    tn += 1
 
         mcc_numerator = (tp * tn) - (fp * fn)
         mcc_denominator = ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)) ** 0.5
@@ -93,6 +100,7 @@ def compute_scores(refe_fn, pred_fn, tag_opts, args):
         res['mcc'] = mcc
 
     return res, total_f1
+
 
 def main():
     args = parse_args()
@@ -115,6 +123,7 @@ def main():
         if 'mcc' in res:
             print('MCC: {:.4}'.format(res['mcc']))
         print('')
+
 
 if __name__ == '__main__':
     main()
