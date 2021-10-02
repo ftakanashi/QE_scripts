@@ -34,6 +34,7 @@ NOTE = \
     --mt_gap_tags FILE    [only requried in training]
     --valid_tags FILE    [if not set, OK/BAD is the default valid tags.]
     
+    --output_prob    [set this flag then you don't need following threshold because probs are output]
     --source_prob_threshold FLOAT    [only required in testing]
     --mt_word_prob_threshold FLOAT    [only required in testing]
     --mt_gap_prob_threshold FLOAT    [only required in testing]
@@ -886,8 +887,13 @@ class DataTrainingArguments:
       20201114 add valid_tags
       20210413 add tag_prob_pooling
       20210508 modify tag_prob_threshold to src_prob_threshold & mt_word_prob_threshold & mt_gap_prob_threshold
+      20211001 add output_prob
     ================================================================================
     '''
+    output_prob: bool = field(
+        default=False,
+        metadata={"help": "Set this flag to output all probabilities rather than OK/BAD tags into the output files."}
+    )
     source_prob_threshold: float = field(
         default=0.5,
         metadata={"help": "The threshold for predicting source tags in regression mode."}
@@ -1069,9 +1075,15 @@ def main():
                 prob = max(vs)
             elif data_args.tag_prob_pooling == 'min':
                 prob = min(vs)
+            else:
+                prob = max(vs)    # dummy
 
-            # output tag label text
-            res_tag = 1 if prob >= threshold else 0
+            if data_args.output_prob:
+                # output the raw probability
+                res_tag = prob
+            else:
+                # output tag label text
+                res_tag = 1 if prob >= threshold else 0
             res.append(res_tag)
 
         if pred == 'mt_gap':
@@ -1128,31 +1140,51 @@ def main():
                 orig_mt_gap_tag_preds.append(map_tag_to_origin(line_i, mt_line, tokenizer, mt_gap_tag_pred, pred='mt_gap'))
                 line_i += 1
 
-        source_tag_res_file = os.path.join(training_args.output_dir, 'pred.source_tags')
-        mt_word_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags')
-        mt_gap_tag_res_file = os.path.join(training_args.output_dir, 'pred.gap_tags')
+        if data_args.output_prob:
+            source_tag_res_file = os.path.join(training_args.output_dir, 'pred.source_tags.prob')
+            mt_word_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags.prob')
+            mt_gap_tag_res_file = os.path.join(training_args.output_dir, 'pred.gap_tags.prob')
+        else:
+            source_tag_res_file = os.path.join(training_args.output_dir, 'pred.source_tags')
+            mt_word_tag_res_file = os.path.join(training_args.output_dir, 'pred.mtword_tags')
+            mt_gap_tag_res_file = os.path.join(training_args.output_dir, 'pred.gap_tags')
 
         if trainer.is_world_master():
 
             with Path(source_tag_res_file).open('w') as f:
                 for tags in orig_source_tag_preds:
-                    f.write(' '.join(id_to_label[t] for t in tags) + '\n')
+                    if data_args.output_prob:
+                        f.write(' '.join([str(p) for p in tags]) + "\n")
+                    else:
+                        f.write(' '.join(id_to_label[t] for t in tags) + '\n')
 
             with Path(mt_word_tag_res_file).open('w') as f:
                  for tags in orig_mt_word_tag_preds:
-                    f.write(' '.join(id_to_label[t] for t in tags) + '\n')
+                     if data_args.output_prob:
+                         f.write(' '.join([str(p) for p in tags]) + "\n")
+                     else:
+                         f.write(' '.join(id_to_label[t] for t in tags) + '\n')
 
             with Path(mt_gap_tag_res_file).open('w') as f:
                 for tags in orig_mt_gap_tag_preds:
-                    f.write(' '.join(id_to_label[t] for t in tags) + '\n')
+                    if data_args.output_prob:
+                        f.write(' '.join([str(p) for p in tags]) + "\n")
+                    else:
+                        f.write(' '.join(id_to_label[t] for t in tags) + '\n')
 
             with Path(os.path.join(training_args.output_dir, 'gen_config.json')).open('w') as f:
                 info = {
                     'time': datetime.datetime.now().strftime('%Y%m%d %H:%M:%S'),
-                    'source_prob_threshold': data_args.source_prob_threshold,
-                    'mt_word_prob_threshold': data_args.mt_word_prob_threshold,
-                    'mt_gap_prob_threshold': data_args.mt_gap_prob_threshold
                 }
+                if data_args.output_prob:
+                    info['output_prob'] = True
+                else:
+                    extra = {
+                        'source_prob_threshold': data_args.source_prob_threshold,
+                        'mt_word_prob_threshold': data_args.mt_word_prob_threshold,
+                        'mt_gap_prob_threshold': data_args.mt_gap_prob_threshold
+                    }
+                    info.update(extra)
                 for k, v in info.items():
                     f.write(f'{k}: {v}\n')
 
