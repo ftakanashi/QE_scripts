@@ -1,0 +1,2 @@
+# run_token_classification_word_tags.py
+试验性地加入alignment_mask
