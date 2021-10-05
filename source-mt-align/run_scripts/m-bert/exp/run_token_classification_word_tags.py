@@ -335,10 +335,11 @@ class QETagClassificationDataset(Dataset):
                 batch_source_mt_align.append(None)
 
             # Read and analyze tags information.
-            # If set_type is eval, do not read any tags.
+            # If set_type is eval, give up trying to read any tags.
             if set_type == 'eval':    # when set_type is eval
                 batch_word_tag_encoding = batch_gap_tag_encoding = [None for _ in examples]
-                break
+                continue
+
             source_tags = e.source_tags.split()
             mt_word_tags = e.mt_word_tags.split()
             if e.mt_gap_tags is not None:
@@ -722,29 +723,9 @@ class QETagClassificationTrainer(Trainer):
             )
 
 
-class BertAlignMaskSelfAttention(nn.Module):
+class BertAlignMaskSelfAttention(BertSelfAttention):
     def __init__(self, config):
-        super().__init__()
-        if config.hidden_size % config.num_attention_heads != 0 and not hasattr(config, "embedding_size"):
-            raise ValueError(
-                "The hidden size (%d) is not a multiple of the number of attention "
-                "heads (%d)" % (config.hidden_size, config.num_attention_heads)
-            )
-
-        self.num_attention_heads = config.num_attention_heads
-        self.attention_head_size = int(config.hidden_size / config.num_attention_heads)
-        self.all_head_size = self.num_attention_heads * self.attention_head_size
-
-        self.query = nn.Linear(config.hidden_size, self.all_head_size)
-        self.key = nn.Linear(config.hidden_size, self.all_head_size)
-        self.value = nn.Linear(config.hidden_size, self.all_head_size)
-
-        self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
-
-    def transpose_for_scores(self, x):
-        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
-        x = x.view(*new_x_shape)
-        return x.permute(0, 2, 1, 3)
+        super(BertAlignMaskSelfAttention, self).__init__(config)
 
     def generate_align_mask(self, token_type_ids, source_mt_align):
         batch_size, max_seq_len = token_type_ids.shape
@@ -835,30 +816,10 @@ class BertAlignMaskSelfAttention(nn.Module):
         return outputs
 
 
-class BertAlignMaskAttention(nn.Module):
+class BertAlignMaskAttention(BertAttention):
     def __init__(self, config):
-        super().__init__()
+        super(BertAlignMaskAttention, self).__init__(config)
         self.self = BertAlignMaskSelfAttention(config)
-        self.output = BertSelfOutput(config)
-        self.pruned_heads = set()
-
-    def prune_heads(self, heads):
-        if len(heads) == 0:
-            return
-        heads, index = find_pruneable_heads_and_indices(
-            heads, self.self.num_attention_heads, self.self.attention_head_size, self.pruned_heads
-        )
-
-        # Prune linear layers
-        self.self.query = prune_linear_layer(self.self.query, index)
-        self.self.key = prune_linear_layer(self.self.key, index)
-        self.self.value = prune_linear_layer(self.self.value, index)
-        self.output.dense = prune_linear_layer(self.output.dense, index, dim=1)
-
-        # Update hyper params and store pruned heads
-        self.self.num_attention_heads = self.self.num_attention_heads - len(heads)
-        self.self.all_head_size = self.self.attention_head_size * self.self.num_attention_heads
-        self.pruned_heads = self.pruned_heads.union(heads)
 
     def forward(
             self,
@@ -886,19 +847,10 @@ class BertAlignMaskAttention(nn.Module):
         return outputs
 
 
-class BertAlignMaskLayer(nn.Module):
+class BertAlignMaskLayer(BertLayer):
     def __init__(self, config):
-        super().__init__()
-        self.chunk_size_feed_forward = config.chunk_size_feed_forward
-        self.seq_len_dim = 1
+        super(BertAlignMaskLayer, self).__init__(config)
         self.attention = BertAlignMaskAttention(config)
-        self.is_decoder = config.is_decoder
-        self.add_cross_attention = config.add_cross_attention
-        if self.add_cross_attention:
-            assert self.is_decoder, f"{self} should be used as a decoder model if cross attention is added"
-            self.crossattention = BertAttention(config)
-        self.intermediate = BertIntermediate(config)
-        self.output = BertOutput(config)
 
     def forward(
             self,
@@ -943,15 +895,10 @@ class BertAlignMaskLayer(nn.Module):
         outputs = (layer_output,) + outputs
         return outputs
 
-    def feed_forward_chunk(self, attention_output):
-        intermediate_output = self.intermediate(attention_output)
-        layer_output = self.output(intermediate_output, attention_output)
-        return layer_output
 
-
-class BertAlignMaskEncoder(nn.Module):
+class BertAlignMaskEncoder(BertEncoder):
     def __init__(self, config):
-        super().__init__()
+        super(BertAlignMaskEncoder, self).__init__(config)
         self.config = config
         self.layer = nn.ModuleList([BertAlignMaskLayer(config) for _ in range(config.num_hidden_layers)])
 
