@@ -42,7 +42,7 @@ NOTE = \
         --bad_loss_lambda FLOAT    [only optional in training]
         
         --alignment_mask
-        --source_mt_align FILE
+        --source_mt_align FILE    [only used when alignment_mask is set]
     '''
 
 import datetime
@@ -278,6 +278,11 @@ class QETagClassificationDataset(Dataset):
                           f' {e.mt_text} {tokenizer.sep_token}'
             pieced_to_origin_mapping = map_offset_roberta(origin_text, tokenizer)
             if len(pieced_to_origin_mapping) > args.max_seq_length:
+                # ignore all examples that exceeds the length limit as truncate is too difficult to implement
+                # raise exception if set_type is eval as the example is in the test set
+                if set_type == 'eval':
+                    raise ValueError(f'Input sequence No.{i} is too long to process. Try to increase max_seq_length '
+                                     f'or delete that row of data.')
                 continue
 
             # Read and analyze source-MT alignment information
