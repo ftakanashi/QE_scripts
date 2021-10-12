@@ -905,7 +905,16 @@ class BertAlignMaskEncoder(BertEncoder):
     def __init__(self, config):
         super(BertAlignMaskEncoder, self).__init__(config)
         self.config = config
-        self.layer = nn.ModuleList([BertAlignMaskLayer(config) for _ in range(config.num_hidden_layers)])
+        if config.alignment_mask_layer_num < 0 or config.alignment_mask_layer_num >= config.num_hidden_layers:
+            self.layer = nn.ModuleList([BertAlignMaskLayer(config) for _ in range(config.num_hidden_layers)])
+        else:
+            module_list = []
+            for _ in range(config.alignment_mask_layer_num):
+                module_list.append(BertAlignMaskLayer(config))
+            while len(module_list) < config.num_hidden_layers:
+                module_list.append(BertLayer(config))
+            self.layer = nn.ModuleList(module_list)
+            # todo check the rest
 
     def forward(
             self,
@@ -1250,6 +1259,7 @@ class DataTrainingArguments:
       20210508 modify tag_prob_threshold to src_prob_threshold & mt_word_prob_threshold & mt_gap_prob_threshold
       20211001 add output_prob
       20211003 add alignment_mask & source_mt_align
+      20211011 add alignment_mask_layer_num
     ================================================================================
     '''
     alignment_mask: bool = field(
@@ -1260,6 +1270,12 @@ class DataTrainingArguments:
         default=None,
         metadata={'help': 'Only used when alignment_mask is set. Path to the source-MT alignment.'}
     )
+    alignment_mask_layer_num: int = field(
+        default=-1,
+        metadata={'help': 'Specify how many layers FROM BOTTOM to apply alignment mask. Default is -1 which means all'
+                          'layers are applied if alignment_mask is set.'}
+    )
+
     output_prob: bool = field(
         default=False,
         metadata={"help": "Set this flag to output all probabilities rather than OK/BAD tags into the output files."}
@@ -1358,6 +1374,9 @@ def main():
 
     if not hasattr(config, 'bad_loss_lambda'):
         config.bad_loss_lambda = model_args.bad_loss_lambda
+
+    if not hasattr(config, 'alignment_mask_layer_num'):
+        config.alignment_mask_layer_num = data_args.alignment_mask_layer_num
 
     '''
     =================================================================================

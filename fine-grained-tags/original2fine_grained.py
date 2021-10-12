@@ -112,6 +112,9 @@ def parse_args():
     parser.add_argument('-o', '--output_dir', default=os.getcwd(),
                         help='Path to the output directory where modified tag files and other output files are saved.')
 
+    parser.add_argument('--output_midfix', default='refine',
+                        help='Midfix in the filename of output files.')
+
     parser.add_argument('--mismatch_strategy', default='remove', choices=['remove'],
                         help='Set the strategy handling unexpected situations like OK-BAD alignments or non-aligned '
                              'OKs.\nYou need to implement a MismatchStrategy class in code.\nDefault: ignore_mismatch.')
@@ -203,7 +206,7 @@ def main():
         dn = args.output_dir
         fn = os.path.basename(fn)
         prefix, ext = fn.rsplit('.', 1)
-        return os.path.join(dn, f'{prefix}.mod.{ext}')
+        return os.path.join(dn, f'{prefix}.{args.output_midfix}.{ext}')
 
     # write in new source tags
     with open(get_new_fn(args.source_tags), 'w') as f:
