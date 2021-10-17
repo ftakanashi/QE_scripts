@@ -43,6 +43,8 @@ NOTE = \
         
         --alignment_mask
         --source_mt_align FILE    [only used when alignment_mask is set]
+        --alignment_mask_layer_num    [only effective when alignment_mask is set]
+        --alignment_mask_head_num    [only effective when alignment_mask is set]
     '''
 
 import datetime
@@ -803,6 +805,7 @@ class RobertaEmbeddingsForQETag(BertEmbeddingsWithoutNorm):
 class BertAlignMaskSelfAttention(BertSelfAttention):
     def __init__(self, config):
         super(BertAlignMaskSelfAttention, self).__init__(config)
+        self.alignment_mask_head_num = config.alignment_mask_head_num
 
     def generate_align_mask(self, token_type_ids, source_mt_align):
         batch_size, max_seq_len = token_type_ids.shape
@@ -870,7 +873,10 @@ class BertAlignMaskSelfAttention(BertSelfAttention):
 
         if source_mt_align is not None:
             align_mask = self.generate_align_mask(token_type_ids, source_mt_align)
-            attention_scores.masked_fill_(align_mask.unsqueeze(1), -10000.0)
+            if self.alignment_mask_head_num < 0 or self.alignment_mask_head_num >= self.num_attention_heads:
+                attention_scores.masked_fill_(align_mask.unsqueeze(1), -10000.0)
+            else:
+                attention_scores[:, :self.alignment_mask_head_num, :, :].masked_fill_(align_mask.unsqueeze(1), -10000.0)
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
@@ -1017,6 +1023,13 @@ class BertAlignMaskEncoder(BertEncoder):
                     encoder_attention_mask,
                 )
             else:
+                if source_mt_align is not None and \
+                        0 <= self.config.alignment_mask_layer_num <= self.config.num_hidden_layers and \
+                        i >= self.config.alignment_mask_layer_num:
+                    input_source_mt_align = None
+                else:
+                    input_source_mt_align = source_mt_align
+
                 layer_outputs = layer_module(
                     hidden_states,
                     attention_mask,
@@ -1025,7 +1038,7 @@ class BertAlignMaskEncoder(BertEncoder):
                     encoder_attention_mask,
                     output_attentions,
                     token_type_ids,
-                    source_mt_align,
+                    input_source_mt_align,
                 )
             hidden_states = layer_outputs[0]
             if output_attentions:
@@ -1322,6 +1335,16 @@ class DataTrainingArguments:
         default=None,
         metadata={'help': 'Only used when alignment_mask is set. Path to the source-MT alignment.'}
     )
+    alignment_mask_layer_num: int = field(
+        default=-1,
+        metadata={'help': 'Specify how many layers FROM BOTTOM to apply alignment mask. Default is -1 which means all'
+                          'layers are applied if alignment_mask is set.'}
+    )
+    alignment_mask_head_num: int = field(
+        default=-1,
+        metadata={"help": "Specify how many heads that should apply alignment mask. Default is -1 which means all heads"
+                          "apply if alignment_mask is set."}
+    )
     output_prob: bool = field(
         default=False,
         metadata={'help': "Set this flag to output all probabilities rather than OK/BAD tags into the output files."}
@@ -1401,10 +1424,18 @@ def main():
     =================================================================================
       @wyzypa
       20210605 INIT
+      20211016 include aligment_mask_layer_num in config
+      20211017 alignment_mask_head_num included
     =================================================================================
     '''
     if not hasattr(config, 'bad_loss_lambda'):
         config.bad_loss_lambda = model_args.bad_loss_lambda
+
+    if not hasattr(config, 'alignment_mask_layer_num'):
+        config.alignment_mask_layer_num = data_args.alignment_mask_layer_num
+
+    if not hasattr(config, 'alignment_mask_head_num'):
+        config.alignment_mask_head_num = data_args.alignment_mask_head_num
 
     '''
     =================================================================================

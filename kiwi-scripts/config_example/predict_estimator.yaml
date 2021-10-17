@@ -1,0 +1,30 @@
+#MAIN OPTIONS (running args)
+
+experiment-name: predict-predest
+
+output-dir: predictions/predest/wmt20/en_zh
+
+#
+# GENERAL OPTIONS
+#
+# random
+seed: 42
+
+# gpu
+gpu-id: 0
+
+model: estimator
+
+# save and load
+load-model: runs/estimator/best_model.torch
+
+#
+# DATA OPTIONS
+#
+wmt18-format: True
+# test-source: data/WMT17/word_level/test.src
+# test-target: data/WMT17/word_level/test.mt
+test-source: WMT20_enzh/test/test.src
+test-target: WMT20_enzh/test/test.mt
+
+valid-batch-size: 64
