@@ -23,6 +23,9 @@ def parse_args():
     parser.add_argument('-m', '--mode', default='original', choices=['fine_grained', 'original'],
                         help='Select an evaluation mode.\nAvailable: fine_grained, original.\nDefault: original')
 
+    parser.add_argument('--simple', action='store_true', default=False,
+                        help="Set this flag to output the simplest results. Like source MCC & MT MCC only.")
+
     return parser.parse_args()
 
 
@@ -112,17 +115,23 @@ def main():
         tag_opts = TAG_OPTIONS[args.mode]
         res, total_f1 = compute_scores(refe_fn, pred_fn, tag_opts, args)
 
-        print(f'======== {type}(P/R/F1) =========')
-        for tag in res:
-            if tag != 'mcc':
-                info = res[tag]
-                print('{}: {:.4} / {:.4} / {:.4}'.format(
-                    tag, info['precision'], info['recall'], info['f1']
-                ))
-        print('TOTAL F1: {:.4}'.format(total_f1))
-        if 'mcc' in res:
-            print('MCC: {:.4}'.format(res['mcc']))
-        print('')
+        if args.simple:
+            assert args.mode == 'original', 'Only original mode is supported currently.'
+            print(f'{type}: {res["mcc"]}')
+
+        else:
+
+            print(f'======== {type}(P/R/F1) =========')
+            for tag in res:
+                if tag != 'mcc':
+                    info = res[tag]
+                    print('{}: {:.4} / {:.4} / {:.4}'.format(
+                        tag, info['precision'], info['recall'], info['f1']
+                    ))
+            print('TOTAL F1: {:.4}'.format(total_f1))
+            if 'mcc' in res:
+                print('MCC: {:.4}'.format(res['mcc']))
+            print('')
 
 
 if __name__ == '__main__':
