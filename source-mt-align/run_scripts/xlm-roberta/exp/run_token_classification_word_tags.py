@@ -1426,10 +1426,14 @@ def main():
       20210605 INIT
       20211016 include aligment_mask_layer_num in config
       20211017 alignment_mask_head_num included
+      20211022 alignment_mask included (only for saving it into config.json for convenience)
     =================================================================================
     '''
     if not hasattr(config, 'bad_loss_lambda'):
         config.bad_loss_lambda = model_args.bad_loss_lambda
+
+    if not hasattr(config, 'alignment_mask'):
+        config.alignment_mask = data_args.alignment_mask
 
     if not hasattr(config, 'alignment_mask_layer_num'):
         config.alignment_mask_layer_num = data_args.alignment_mask_layer_num

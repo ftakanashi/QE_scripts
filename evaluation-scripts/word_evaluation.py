@@ -117,7 +117,7 @@ def main():
 
         if args.simple:
             assert args.mode == 'original', 'Only original mode is supported currently.'
-            print(type + '{:.4}'.format(res['mcc']))
+            print(type + ': {:.4}'.format(res['mcc']))
 
         else:
 
