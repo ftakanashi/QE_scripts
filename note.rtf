@@ -1,0 +1,44 @@
+{\rtf1\ansi\ansicpg936\cocoartf2580
+\readonlydoc1\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fnil\fcharset134 PingFangSC-Semibold;\f1\fswiss\fcharset0 Helvetica;\f2\fswiss\fcharset0 Helvetica-Bold;
+\f3\fnil\fcharset134 PingFangSC-Regular;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww5980\viewh18000\viewkind0
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\b\fs26 \cf0 \'a1\'beSpan Align\'b3\'cc\'d0\'f2\'a1\'bf
+\f1\b0 \
+python run_squad_align.py\
+--model_type bert --model_name_or_path m-bert --version_2_with_negative --output_dir output --cache_dir output --do_train --train_file train.json --do_eval --predict_file test.json --learning_rate 3e-5 --num_train_epoch 2.0 --save_steps 10000 --max_query_length 160 --max_answer_length 15 --overwrite_output_dir --overwrite_cache\
+--per_gpu_train_batch_size\
+\
+
+\f0\b \'a1\'be
+\f2 Sequence Tagging
+\f0 \'a1\'bf\'a1\'beTrain\'a1\'bf
+\f1\b0 \
+python run_token_classification_word_tags.py\
+--model_name_or_path m-bert --do_train --source_text data/train.src --mt_text data/train.mt --source_tags data/train.source_tags --mt_word_tags data/train.mtword_tags --mt_gap_tags data/train.gap_tags --learning_rate 3e-5 --max_seq_length 384 --output_dir output.5epoch  --save_steps 1000 --num_train_epochs 5.0 --overwrite_cache --overwrite_output_dir --logging_steps 50\
+--bad_loss_lambda\
+--per_device_train_batch_size\
+--alignment_mask & --source_mt_align\
+\
+
+\f0\b \'a1\'be
+\f2 Sequence Tagging
+\f0 \'a1\'bf\'a1\'beEval\'a1\'bf
+\f1\b0 \
+python run_token_classification_word_tags.py\
+--model_name_or_path output --do_eval --source_text data/test/test.src --mt_text data/test/test.mt --max_seq_length 384 --output_dir output/testing --output_prob\
+--alignment_mask & --source_mt_align\
+\
+python search_best_tag_threshold.py\
+-r data/test/test -p pred --output_final_result --all_ok_gap
+\f3 \
+\
+
+\f0\b \'a1\'be
+\f2 qe
+\f0 -corpus-builder\'d3\'c3\'b7\'a8\'a1\'bf
+\f3\b0 \
+bash tools/get_tags.sh ../test.en ../mt.zh ../test.zh ../trained_fast_align ../tmp ../output normal train.0 > ../get_tags.log 2>&1 &}

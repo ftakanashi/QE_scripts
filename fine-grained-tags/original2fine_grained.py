@@ -11,6 +11,7 @@
 
 import argparse
 import collections
+import datetime
 import copy
 import os
 
@@ -223,6 +224,16 @@ def main():
         with open(get_new_fn(args.source_mt_align), 'w') as f:
             for l in mod_align_lines:
                 f.write(l + '\n')
+
+    refine_log = {
+        'source_tags': args.source_tags,
+        'mtword_tags': args.mt_tags,
+        'alignment': args.source_mt_align,
+        'refine_time': datetime.datetime.strftime(datetime.datetime.now(), '%Y-%m-%d %H:%M:%S')
+    }
+    with open(os.path.join(args.output_dir, 'refine.log'), 'w') as wf:
+        for k, v in refine_log.items():
+            wf.write(f"{k}: {v}\n")
 
 if __name__ == '__main__':
     main()

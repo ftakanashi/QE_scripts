@@ -2,9 +2,9 @@
 文档：https://unbabel.github.io/OpenKiwi/quickstart.html
 老版本repo: https://github.com/Unbabel/OpenKiwi/tree/4834561cc54d1fbd96b194f8fc33d75e29e5132e
 
-流程是先用parallel corpus训练predictor。
-再用QE数据训练predictor-estimator。
-最后用QEtest数据进行predict。
+流程是先用parallel corpus训练predictor。  (参考命令：`kiwi train --config train_predictor.yaml`)
+再用QE数据训练predictor-estimator。    (参考命令：`kiwi train --config train_estimator.yaml`)
+最后用QEtest数据进行predict。    (参考命令：`kiwi predict --config predict_estimator.yaml`)
 
 通常只要依次将元项目中的experiments中的
 train_predictor.yaml, train_estimator.yaml, predict_estimator.yaml几个运行的配置文件
