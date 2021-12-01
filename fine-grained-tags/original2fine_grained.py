@@ -17,6 +17,7 @@ import os
 
 from pathlib import Path
 
+
 class MismatchStrategy:
     def __init__(self):
         self.nonAlignSrcOkCount = 0
@@ -44,6 +45,7 @@ class MismatchStrategy:
         need to be implemented
         '''
         pass
+
 
 class RemoveStrategy(MismatchStrategy):
     def __init__(self):
@@ -94,12 +96,62 @@ class RemoveStrategy(MismatchStrategy):
         return mod_src_tags, mod_mt_tags, mod_aligns
 
 
+class AllBadStrategy(MismatchStrategy):
+    def __init__(self):
+        super(AllBadStrategy, self).__init__()
+
+    def _modify(self, src_tags, mt_tags, alignments, **kwargs):
+        for si in range(len(src_tags)):
+            for ti in range(len(mt_tags)):
+                if (si, ti) in alignments and src_tags[si] != mt_tags[ti]:
+                    self.mismatchTagCount += 2
+                    src_tags[si] = mt_tags[ti] = 'BAD'
+
+        s2t_dict = collections.defaultdict(list)
+        t2s_dict = collections.defaultdict(list)
+        for a, b in alignments:
+            s2t_dict[a].append(b)
+            t2s_dict[b].append(a)
+
+        mod_src_tags = []
+        mod_mt_tags = []
+        for si, src_tag in enumerate(src_tags):
+            if src_tag == 'BAD':
+                if len(s2t_dict[si]) == 0:
+                    mod_src_tags.append('INS')
+                else:
+                    mod_src_tags.append('REP')
+            else:
+                if len(s2t_dict[si]) == 0: self.nonAlignSrcOkCount += 1
+                mod_src_tags.append('OK')
+
+        for ti, mt_tag in enumerate(mt_tags):
+            if mt_tag == 'BAD':
+                if len(t2s_dict[ti]) == 0:
+                    mod_mt_tags.append('DEL')
+                else:
+                    mod_mt_tags.append('REP')
+            else:
+                if len(t2s_dict[ti]) == 0: self.nonAlignMtOkCount += 1
+                mod_mt_tags.append('OK')
+
+        mod_aligns = []
+        if kwargs.get('output_alignment', False):
+            for si in s2t_dict:
+                for ti in s2t_dict[si]:
+                    mod_aligns.append(f'{si}-{ti}')
+
+        return mod_src_tags, mod_mt_tags, mod_aligns
+
+
 OK_LABELS = ['OK']
 BAD_LABELS = ['BAD', 'REP', 'INS', 'DEL']
 
 STRATEGY_MAP = {
-    'remove': RemoveStrategy
+    'remove': RemoveStrategy,
+    'all_bad': AllBadStrategy
 }
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -116,9 +168,9 @@ def parse_args():
     parser.add_argument('--output_midfix', default='refine',
                         help='Midfix in the filename of output files.')
 
-    parser.add_argument('--mismatch_strategy', default='remove', choices=['remove'],
+    parser.add_argument('--mismatch_strategy', default='remove', choices=['remove', 'all_bad'],
                         help='Set the strategy handling unexpected situations like OK-BAD alignments or non-aligned '
-                             'OKs.\nYou need to implement a MismatchStrategy class in code.\nDefault: ignore_mismatch.')
+                             'OKs.\nYou need to implement a MismatchStrategy class in code.\nDefault: remove.')
     parser.add_argument('--output_cleaned_alignment', action='store_true', default=False,
                         help='Add this flag to re-generate a cleaned alignment file which has no mismatch according '
                              'to the given tags.')
@@ -201,7 +253,6 @@ def main():
         if len(mod_aligns) > 0:
             mod_align_lines.append(' '.join(mod_aligns))
 
-
     def get_new_fn(fn):
         # dn = os.path.dirname(os.path.abspath(fn))
         dn = args.output_dir
@@ -234,6 +285,7 @@ def main():
     with open(os.path.join(args.output_dir, 'refine.log'), 'w') as wf:
         for k, v in refine_log.items():
             wf.write(f"{k}: {v}\n")
+
 
 if __name__ == '__main__':
     main()
