@@ -43,12 +43,15 @@ logger = logging.getLogger(__name__)
 MODEL_CONFIG_CLASSES = list(MODEL_WITH_LM_HEAD_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
-
 '''
-    Here is some customized classes for TLM-pretrain
+    Here are some customized dataset-related classes for TLM-pretrain
 '''
 import torch
 from torch.utils.data import Dataset
+from torch.nn.utils.rnn import pad_sequence
+from typing import List, Dict, Union, Tuple
+from transformers.tokenization_utils_base import BatchEncoding
+
 class ParallelTextDataset(Dataset):
 
     def __init__(
@@ -88,6 +91,123 @@ class ParallelTextDataset(Dataset):
         return torch.tensor(self.examples[i], dtype=torch.long)
 
 
+@dataclass
+class DataCollatorForTranslationLanguageModeling:
+    """
+    Data collator used for translation language modeling. (modified from DataCollatorForLanguageModeling)
+    - collates batches of tensors, honoring their tokenizer's pad_token
+    - preprocesses batches for translation language modeling (adding position_ids and language_ids which is adapt to
+    token_type_ids)
+    """
+
+    tokenizer: PreTrainedTokenizer
+    mlm: bool = True
+    mlm_probability: float = 0.15
+
+    def __call__(
+        self, examples: List[Union[List[int], torch.Tensor, Dict[str, torch.Tensor]]]
+    ) -> Dict[str, torch.Tensor]:
+        if isinstance(examples[0], (dict, BatchEncoding)):
+            examples = [e["input_ids"] for e in examples]
+        batch = self._tensorize_batch(examples)
+        if self.mlm:
+            inputs, labels = self.mask_tokens(batch)
+            _res = {"input_ids": inputs, "labels": labels}
+            _extra = self._generate_extra(batch)
+            _res.update(_extra)
+            return _res
+        else:
+            labels = batch.clone().detach()
+            if self.tokenizer.pad_token_id is not None:
+                labels[labels == self.tokenizer.pad_token_id] = -100
+            return {"input_ids": batch, "labels": labels}
+
+    def _generate_extra(self, batch):
+        '''
+        manually generate token_type_ids and position_ids
+        '''
+        batch_size, seq_len = batch.shape
+        pad = self.tokenizer.pad_token_id
+        sep = self.tokenizer.sep_token_id
+
+        token_type_ids = torch.zeros_like(batch)
+        for batch_i in range(batch_size):
+            flag = 0
+            for seq_j in range(seq_len):
+                if batch[batch_i, seq_j] == pad: break
+                token_type_ids[batch_i, seq_j] = flag
+                if seq_j < seq_len-1 and batch[batch_i, seq_j] == sep and batch[batch_i, seq_j + 1] == sep:
+                    flag = 1
+
+        position_ids = torch.zeros_like(batch)
+        for batch_i in range(batch_size):
+            flag = 0
+            for seq_j in range(seq_len):
+                if batch[batch_i, seq_j] == pad: break
+                position_ids[batch_i, seq_j] = flag
+                flag += 1
+                if seq_j < seq_len-1 and batch[batch_i, seq_j] == sep and batch[batch_i, seq_j + 1] == sep:
+                    flag = 0
+
+        extra = {
+            # 'token_type_ids': token_type_ids,
+            'position_ids': position_ids
+        }
+        return extra
+
+    def _tensorize_batch(
+        self, examples: List[Union[List[int], torch.Tensor, Dict[str, torch.Tensor]]]
+    ) -> torch.Tensor:
+        # In order to accept both lists of lists and lists of Tensors
+        if isinstance(examples[0], (list, tuple)):
+            examples = [torch.tensor(e, dtype=torch.long) for e in examples]
+        length_of_first = examples[0].size(0)
+        are_tensors_same_length = all(x.size(0) == length_of_first for x in examples)
+        if are_tensors_same_length:
+            return torch.stack(examples, dim=0)
+        else:
+            if self.tokenizer._pad_token is None:
+                raise ValueError(
+                    "You are attempting to pad samples but the tokenizer you are using"
+                    f" ({self.tokenizer.__class__.__name__}) does not have one."
+                )
+            return pad_sequence(examples, batch_first=True, padding_value=self.tokenizer.pad_token_id)
+
+    def mask_tokens(self, inputs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Prepare masked tokens inputs/labels for masked language modeling: 80% MASK, 10% random, 10% original.
+        """
+
+        if self.tokenizer.mask_token is None:
+            raise ValueError(
+                "This tokenizer does not have a mask token which is necessary for masked language modeling. Remove the --mlm flag if you want to use this tokenizer."
+            )
+
+        labels = inputs.clone()
+        # We sample a few tokens in each sequence for masked-LM training (with probability args.mlm_probability defaults to 0.15 in Bert/RoBERTa)
+        probability_matrix = torch.full(labels.shape, self.mlm_probability)
+        special_tokens_mask = [
+            self.tokenizer.get_special_tokens_mask(val, already_has_special_tokens=True) for val in labels.tolist()
+        ]
+        probability_matrix.masked_fill_(torch.tensor(special_tokens_mask, dtype=torch.bool), value=0.0)
+        if self.tokenizer._pad_token is not None:
+            padding_mask = labels.eq(self.tokenizer.pad_token_id)
+            probability_matrix.masked_fill_(padding_mask, value=0.0)
+        masked_indices = torch.bernoulli(probability_matrix).bool()
+        labels[~masked_indices] = -100  # We only compute loss on masked tokens
+
+        # 80% of the time, we replace masked input tokens with tokenizer.mask_token ([MASK])
+        indices_replaced = torch.bernoulli(torch.full(labels.shape, 0.8)).bool() & masked_indices
+        inputs[indices_replaced] = self.tokenizer.convert_tokens_to_ids(self.tokenizer.mask_token)
+
+        # 10% of the time, we replace masked input tokens with random word
+        indices_random = torch.bernoulli(torch.full(labels.shape, 0.5)).bool() & masked_indices & ~indices_replaced
+        random_words = torch.randint(len(self.tokenizer), labels.shape, dtype=torch.long)
+        inputs[indices_random] = random_words[indices_random]
+
+        # The rest of the time (10% of the time) we keep the masked input tokens unchanged
+        return inputs, labels
+
 '''
     End customized things
 '''
@@ -117,7 +237,6 @@ class ModelArguments:
     cache_dir: Optional[str] = field(
         default=None, metadata={"help": "Where do you want to store the pretrained models downloaded from s3"}
     )
-
 
 @dataclass
 class DataTrainingArguments:
@@ -317,7 +436,7 @@ def main():
             max_span_length=data_args.max_span_length,
         )
     else:
-        data_collator = DataCollatorForLanguageModeling(
+        data_collator = DataCollatorForTranslationLanguageModeling(
             tokenizer=tokenizer, mlm=data_args.mlm, mlm_probability=data_args.mlm_probability
         )
 
