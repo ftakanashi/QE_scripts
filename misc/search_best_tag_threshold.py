@@ -8,7 +8,7 @@ NOTE = \
         
         Usage is like:
         python search_best_tag_threshold.py -r xxx/test -p xxx/pred --min_ths 0.0 --max_ths 1.0 --stride 0.01
-        --output_final_result --verbose --all_ok_gap
+        --verbose
     '''
 
 import argparse
@@ -33,10 +33,11 @@ def parse_args():
                         help='Stride for searching. DO NOT set it too small.')
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='Set this flag to output more detailed process of search.')
-    parser.add_argument('--output_final_result', action='store_true', default=False,
-                        help='Set this flag to output the final results under the found best threshold.')
-    parser.add_argument('--all_ok_gap', action='store_true', default=False,
-                        help='Set this flag to output gap tags "All OK" when merging gap/mtword tags.')
+    parser.add_argument('--no_output', action='store_true', default=False,
+                        help='Set this flag to do threshold search only. No output files will be generated')
+    parser.add_argument('--use_predicted_gap', action='store_true', default=False,
+                        help='Set this flag to use really predicted gap tags rather than "All OK" when merging '
+                             'gap/mtword tags.')
 
     parser.add_argument('--script_root', type=str, default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                         help='Root path for QE_scripts.')
@@ -67,7 +68,24 @@ def calc_scores(ref_tags, pred_tags):
     mcc_numerator = (tp * tn) - (fp * fn)
     mcc_denominator = ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)) ** 0.5
     mcc = mcc_numerator / (mcc_denominator + 1e-5)
-    return mcc
+
+    ok_precision = tp / (tp + fp)
+    ok_recall = tp / (tp + fn)
+    ok_f1 = 2 * ok_precision * ok_recall / (ok_precision + ok_recall)
+
+    bad_precision = tn / (tn + fn)
+    bad_recall = tn / (tn + fp)
+    bad_f1 = 2 * bad_precision * bad_recall / (bad_precision + bad_recall)
+
+    return {
+        'mcc': mcc,
+        'ok_f1': ok_f1,
+        'ok_p': ok_precision,
+        'ok_r': ok_recall,
+        'bad_f1': bad_f1,
+        'bad_p': bad_precision,
+        'bad_r': bad_recall
+    }
 
 
 def process(pred_fn, ref_fn, args):
@@ -96,13 +114,16 @@ def process(pred_fn, ref_fn, args):
             print(f'threshold = {ths:.4f},', end='\t')
 
         all_dummy_pred_tags = ['OK' if p < ths else 'BAD' for p in all_pred_probs]
-        mcc = calc_scores(all_ref_tags, all_dummy_pred_tags)
+        res = calc_scores(all_ref_tags, all_dummy_pred_tags)
+        mcc = res['mcc']
         if mcc > max_mcc:
             max_mcc = mcc
             opt_ths = ths
 
         if args.verbose:
-            print(f'MCC = {mcc:.4f}')
+            ok_info = f"{res['ok_f1']}/{res['ok_p']}/{res['ok_r']}"
+            bad_info = f"{res['bad_f1']}/{res['bad_p']}/{res['bad_r']}"
+            print(f'MCC: {mcc:.4f}\tOK(F1/P/R): {ok_info}\tBAD(F1/P/R): {bad_info}')
 
         ths += args.stride
         cnt += 1
@@ -151,31 +172,36 @@ def main():
         opt_ths, max_mcc = process(pred_fn, ref_fn, args)
         print(f'{suffix}: Optimized threshold [{opt_ths:.4f}], Maximum MCC [{max_mcc:.4f}]')
 
-        if args.output_final_result:
-            print('\nWriting optimized final results...')
-            output_fn = args.pred_prefix + '.' + suffix
-            output_to_file(pred_fn, opt_ths, output_fn)
+        if args.no_output:
+            continue
+        print('\nWriting optimized final results...')
+        output_fn = args.pred_prefix + '.' + suffix
+        output_to_file(pred_fn, opt_ths, output_fn)
 
-    if args.output_final_result:
-        mtword_res = args.pred_prefix + '.mtword_tags'
-        gap_res = args.pred_prefix + '.gap_tags'
+    if args.no_output:
+        return
 
-        if os.path.isfile(mtword_res) and os.path.isfile(gap_res):
-            total_res = args.pred_prefix + '.tags'
-            if args.all_ok_gap:
-                script_path = os.path.join(args.script_root, 'about-gap-tags', 'insert_ok_gaps.py')
-                cmd = f'python {script_path} -i {mtword_res} -o {total_res}'
-            else:
-                script_path = os.path.join(args.script_root, 'about-gap-tags', 'merge_mt_word_gap.py')
-                cmd = f'python {script_path} -wt {mtword_res} -gt {gap_res} -o {total_res}'
+    # generate  .tags
+    mtword_res = args.pred_prefix + '.mtword_tags'
+    gap_res = args.pred_prefix + '.gap_tags'
+
+    if os.path.isfile(mtword_res) and os.path.isfile(gap_res):
+        total_res = args.pred_prefix + '.tags'
+        if args.use_predicted_gap:
+            script_path = os.path.join(args.script_root, 'about-gap-tags', 'merge_mt_word_gap.py')
+            cmd = f'python {script_path} -wt {mtword_res} -gt {gap_res} -o {total_res}'
+        else:
+            script_path = os.path.join(args.script_root, 'about-gap-tags', 'insert_ok_gaps.py')
+            cmd = f'python {script_path} -i {mtword_res} -o {total_res}'
+
+        os.system(cmd)
+
+        print('\n\n')
+        flag = input('Do you need to evaluate the final results? (y/n)')
+        if flag == 'y':
+            script_path = os.path.join(args.script_root, 'evaluation-scripts', 'word_evaluation.py')
+            cmd = f'python {script_path} -r {args.ref_prefix} -p {args.pred_prefix}'
             os.system(cmd)
-
-            print('\n\n')
-            flag = input('Do you need to evaluate the final results? (y/n)')
-            if flag == 'y':
-                script_path = os.path.join(args.script_root, 'evaluation-scripts', 'word_evaluation.py')
-                cmd = f'python {script_path} -r {args.ref_prefix} -p {args.pred_prefix}'
-                os.system(cmd)
 
 
 if __name__ == '__main__':
