@@ -51,6 +51,7 @@ def parse_args():
 
 
 def calc_scores(ref_tags, pred_tags):
+    eps = 1e-5
     pos_tag, nev_tag = 'OK', 'BAD'
     tp = fp = tn = fn = 0
     for pred_tag, ref_tag in zip(pred_tags, ref_tags):
@@ -67,15 +68,18 @@ def calc_scores(ref_tags, pred_tags):
 
     mcc_numerator = (tp * tn) - (fp * fn)
     mcc_denominator = ((tp + fp) * (tp + fn) * (tn + fp) * (tn + fn)) ** 0.5
-    mcc = mcc_numerator / (mcc_denominator + 1e-5)
+    mcc = mcc_numerator / (mcc_denominator + eps)
 
-    ok_precision = tp / (tp + fp)
-    ok_recall = tp / (tp + fn)
-    ok_f1 = 2 * ok_precision * ok_recall / (ok_precision + ok_recall)
+    def adapt(num):
+        return 0 if num > 1 else num
 
-    bad_precision = tn / (tn + fn)
-    bad_recall = tn / (tn + fp)
-    bad_f1 = 2 * bad_precision * bad_recall / (bad_precision + bad_recall)
+    ok_precision = adapt(tp / (tp + fp + eps))
+    ok_recall = adapt(tp / (tp + fn + eps))
+    ok_f1 = adapt(2 * ok_precision * ok_recall / (ok_precision + ok_recall + eps))
+
+    bad_precision = adapt(tn / (tn + fn + eps))
+    bad_recall = adapt(tn / (tn + fp + eps))
+    bad_f1 = adapt(2 * bad_precision * bad_recall / (bad_precision + bad_recall + eps))
 
     return {
         'mcc': mcc,
@@ -108,10 +112,12 @@ def process(pred_fn, ref_fn, args):
     max_mcc, opt_ths = -99999, -1
     total_cnt = max(1, int((args.max_ths - args.min_ths) / args.stride))
     cnt = 0
+    if args.verbose:
+        print(f"Ths\tMCC\tOK(F1/P/R)\tBAD(F1/P/R)")
     while ths <= args.max_ths:
         if args.verbose:
-            print('[{:.0f}%]'.format((cnt / total_cnt) * 100), end='')
-            print(f'threshold = {ths:.4f},', end='\t')
+            # print('[{:.0f}%]'.format((cnt / total_cnt) * 100), end='')
+            print(f'{ths:.4f}', end='\t')
 
         all_dummy_pred_tags = ['OK' if p < ths else 'BAD' for p in all_pred_probs]
         res = calc_scores(all_ref_tags, all_dummy_pred_tags)
@@ -121,9 +127,9 @@ def process(pred_fn, ref_fn, args):
             opt_ths = ths
 
         if args.verbose:
-            ok_info = f"{res['ok_f1']}/{res['ok_p']}/{res['ok_r']}"
-            bad_info = f"{res['bad_f1']}/{res['bad_p']}/{res['bad_r']}"
-            print(f'MCC: {mcc:.4f}\tOK(F1/P/R): {ok_info}\tBAD(F1/P/R): {bad_info}')
+            ok_info = f"{res['ok_f1']:.4f}/{res['ok_p']:.4f}/{res['ok_r']:.4f}"
+            bad_info = f"{res['bad_f1']:.4f}/{res['bad_p']:.4f}/{res['bad_r']:.4f}"
+            print(f'{mcc:.4f}\t{ok_info}\t{bad_info}')
 
         ths += args.stride
         cnt += 1

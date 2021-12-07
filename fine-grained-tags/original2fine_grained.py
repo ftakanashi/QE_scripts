@@ -168,9 +168,9 @@ def parse_args():
     parser.add_argument('--output_midfix', default='refine',
                         help='Midfix in the filename of output files.')
 
-    parser.add_argument('--mismatch_strategy', default='remove', choices=['remove', 'all_bad'],
+    parser.add_argument('--mismatch_strategy', default='all_bad', choices=['remove', 'all_bad'],
                         help='Set the strategy handling unexpected situations like OK-BAD alignments or non-aligned '
-                             'OKs.\nYou need to implement a MismatchStrategy class in code.\nDefault: remove.')
+                             'OKs.\nYou need to implement a MismatchStrategy class in code.\nDefault: all_bad.')
     parser.add_argument('--output_cleaned_alignment', action='store_true', default=False,
                         help='Add this flag to re-generate a cleaned alignment file which has no mismatch according '
                              'to the given tags.')
