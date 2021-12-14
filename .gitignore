@@ -1,9 +1,10 @@
-.idea*
+.idea/*
 about-gap-tags/tmp*
 pe-mt-align/WMT20
 pe-mt-align/model
 pe-mt-align/tmp*
 cplex-scripts/tmp*
+mbart-prompt/tmp*
 source-mt-align/tmp*
 source-mt-align/run_scripts/tmp*
 source-pe-align/tmp*
