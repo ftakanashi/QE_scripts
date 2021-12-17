@@ -123,13 +123,17 @@ class AdaptMBartTokenizer(XLMRobertaTokenizer):
         """
         if token_ids_1 is None:
             return self.prefix_tokens + token_ids_0 + self.suffix_tokens
-        # We don't expect to process pairs, but leave the pair logic for API consistency
+        if hasattr(self, 'src_lang') and hasattr(self, 'tgt_lang'):
+            part1 = self.prefix_tokens + token_ids_0 + [self.eos_token_id, self.lang_code_to_id[self.src_lang]]
+            part2 = token_ids_1 + [self.eos_token_id, self.lang_code_to_id[self.tgt_lang]]
+            return part1 + part2
         return self.prefix_tokens + token_ids_0 + token_ids_1 + self.suffix_tokens
 
     @add_start_docstrings(PREPARE_SEQ2SEQ_BATCH_DOCSTRING)
     def prepare_seq2seq_batch(
         self,
         src_texts: List[str],
+        tgt_blank_texts: List[str],
         src_lang: str = "en_XX",
         tgt_texts: Optional[List[str]] = None,
         tgt_lang: str = "ro_RO",
@@ -146,6 +150,7 @@ class AdaptMBartTokenizer(XLMRobertaTokenizer):
         self.set_src_lang_special_tokens(src_lang)
         model_inputs: BatchEncoding = self(
             src_texts,
+            text_pair=tgt_blank_texts,
             add_special_tokens=True,
             return_tensors=return_tensors,
             max_length=max_length,

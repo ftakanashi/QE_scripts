@@ -46,7 +46,9 @@ from transformers import (
 )
 
 from mbart_prompt.myutils.data_collator import DataCollatorForSeq2Seq
+from mbart_prompt.myutils.modeling_bart import MBartForConditionalGeneration
 from mbart_prompt.myutils.tokenization_mbart import AdaptMBartTokenizer as MBartTokenizer
+from mbart_prompt.myutils.trainer import Seq2SeqTrainer
 from mbart_prompt.myutils.training_args import Seq2SeqTrainingArguments
 
 logger = logging.getLogger(__name__)
@@ -185,7 +187,8 @@ class DataTrainingArguments:
     )
 
     def __post_init__(self):
-        if self.dataset_name is None and self.train_file is None and self.validation_file is None:
+        if self.dataset_name is None and self.train_file is None and self.validation_file is None and self.test_file \
+                is None:
             raise ValueError("Need either a dataset name or a training/validation file.")
         elif self.source_lang is None or self.target_lang is None:
             raise ValueError("Need to specify the source language and the target language.")
@@ -196,6 +199,9 @@ class DataTrainingArguments:
         if self.validation_file is not None:
             extension = self.validation_file.split(".")[-1]
             assert extension == "json", "`validation_file` should be a json file."
+        if self.test_file is not None:
+            extension = self.test_file.split('.')[-1]
+            assert extension == "json", "test_file` should be a json file."
         if self.val_max_target_length is None:
             self.val_max_target_length = self.max_target_length
 
@@ -264,14 +270,14 @@ def main():
     tokenizer = MBartTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path
     )
-    model = AutoModelForSeq2SeqLM.from_pretrained(
+    model = MBartForConditionalGeneration.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
-        cache_dir=model_args.cache_dir,
+        cache_dir=model_args.cache_dir
     )
 
-    model.resize_token_embeddings(len(tokenizer))
+    # model.resize_token_embeddings(len(tokenizer))
 
     # Set decoder_start_token_id
     if model.config.decoder_start_token_id is None and isinstance(tokenizer, MBartTokenizer):
@@ -287,11 +293,9 @@ def main():
     if training_args.do_train:
         column_names = raw_datasets["train"].column_names
     elif training_args.do_eval:
-        column_names = raw_datasets["validation"].column_names
-    elif training_args.do_predict:
         column_names = raw_datasets["test"].column_names
     else:
-        logger.info("There is nothing to do. Please pass `do_train`, `do_eval` and/or `do_predict`.")
+        logger.info("There is nothing to do. Please pass `do_train` and/or `do_eval`.")
         return
 
     # For translation we set the codes of our source and target languages (only useful for mBART, the others will
@@ -314,6 +318,7 @@ def main():
     # Get the language codes for input/target.
     source_lang = data_args.source_lang.split("_")[0]
     target_lang = data_args.target_lang.split("_")[0]
+    target_blank_lang = f"{target_lang}_blank"
 
     # Temporarily set max_target_length for training.
     max_target_length = data_args.max_target_length
@@ -327,6 +332,7 @@ def main():
 
     def preprocess_function(examples):
         inputs = [ex[source_lang] for ex in examples["translation"]]
+        target_blanks = [ex[target_blank_lang] for ex in examples["translation"]]
         targets = [ex[target_lang] for ex in examples["translation"]]
         inputs = [prefix + inp for inp in inputs]
 
@@ -336,16 +342,23 @@ def main():
         # model_inputs["labels"] = labels["input_ids"]
 
         batch = tokenizer.prepare_seq2seq_batch(
-            src_texts=inputs, src_lang=data_args.source_lang, tgt_texts=targets, tgt_lang=data_args.target_lang,
-            max_length=data_args.max_source_length, max_target_length=max_target_length,
+            src_texts=inputs, src_lang=data_args.source_lang, tgt_blank_texts=target_blanks, tgt_texts=targets,
+            tgt_lang=data_args.target_lang, max_length=data_args.max_source_length, max_target_length=max_target_length,
             padding=True, truncation=True     # padding不设置成True就报错…
         )
         batch['input_ids'] = batch['input_ids'].tolist()
         batch['labels'] = batch['labels'].tolist()
         batch['attention_mask'] = batch['attention_mask'].tolist()
 
-        return batch
+        # 去除pad
+        for row in batch['input_ids']:
+            while row[-1] == tokenizer.pad_token_id:
+                row.pop()
+        for row in batch['labels']:
+            while row[-1] == tokenizer.pad_token_id:
+                row.pop()
 
+        return batch
 
     if training_args.do_train:
         if "train" not in raw_datasets:
@@ -364,23 +377,6 @@ def main():
             )
 
     if training_args.do_eval:
-        max_target_length = data_args.val_max_target_length
-        if "validation" not in raw_datasets:
-            raise ValueError("--do_eval requires a validation dataset")
-        eval_dataset = raw_datasets["validation"]
-        if data_args.max_eval_samples is not None:
-            eval_dataset = eval_dataset.select(range(data_args.max_eval_samples))
-        with training_args.main_process_first(desc="validation dataset map pre-processing"):
-            eval_dataset = eval_dataset.map(
-                preprocess_function,
-                batched=True,
-                num_proc=data_args.preprocessing_num_workers,
-                remove_columns=column_names,
-                load_from_cache_file=not data_args.overwrite_cache,
-                desc="Running tokenizer on validation dataset",
-            )
-
-    if training_args.do_predict:
         max_target_length = data_args.val_max_target_length
         if "test" not in raw_datasets:
             raise ValueError("--do_predict requires a test dataset")
@@ -410,12 +406,11 @@ def main():
         )
 
     # Initialize our Trainer
-    # todo 写到trainer了，虽然不知道前面的data处理部分是不是对的…
     trainer = Seq2SeqTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
-        eval_dataset=eval_dataset if training_args.do_eval else None,
+        eval_dataset=None,
         tokenizer=tokenizer,
         data_collator=data_collator,
         compute_metrics=None,
@@ -423,23 +418,15 @@ def main():
 
     # Training
     if training_args.do_train:
-        checkpoint = None
-        if training_args.resume_from_checkpoint is not None:
-            checkpoint = training_args.resume_from_checkpoint
-        elif last_checkpoint is not None:
-            checkpoint = last_checkpoint
-        train_result = trainer.train(resume_from_checkpoint=checkpoint)
-        trainer.save_model()  # Saves the tokenizer too for easy upload
-
-        metrics = train_result.metrics
-        max_train_samples = (
-            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+        model_path = (
+            model_args.model_name_or_path
+            if model_args.model_name_or_path is not None and os.path.isdir(model_args.model_name_or_path)
+            else None
         )
-        metrics["train_samples"] = min(max_train_samples, len(train_dataset))
-
-        trainer.log_metrics("train", metrics)
-        trainer.save_metrics("train", metrics)
-        trainer.save_state()
+        trainer.train(model_path=model_path)
+        trainer.save_model()
+        if trainer.is_world_master():
+            tokenizer.save_pretrained(training_args.output_dir)
 
     # Evaluation
     results = {}
@@ -450,16 +437,6 @@ def main():
     )
     num_beams = data_args.num_beams if data_args.num_beams is not None else training_args.generation_num_beams
     if training_args.do_eval:
-        logger.info("*** Evaluate ***")
-
-        metrics = trainer.evaluate(max_length=max_length, num_beams=num_beams, metric_key_prefix="eval")
-        max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
-        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
-
-        trainer.log_metrics("eval", metrics)
-        trainer.save_metrics("eval", metrics)
-
-    if training_args.do_predict:
         logger.info("*** Predict ***")
 
         predict_results = trainer.predict(
@@ -471,8 +448,8 @@ def main():
         )
         metrics["predict_samples"] = min(max_predict_samples, len(predict_dataset))
 
-        trainer.log_metrics("predict", metrics)
-        trainer.save_metrics("predict", metrics)
+        # trainer.log_metrics("predict", metrics)
+        # trainer.save_metrics("predict", metrics)
 
         if trainer.is_world_process_zero():
             if training_args.predict_with_generate:
