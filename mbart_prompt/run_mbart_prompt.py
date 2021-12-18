@@ -24,6 +24,7 @@ tmp_output
 """
 # You can also adapt this script on your own sequence to sequence task. Pointers for this are left as comments.
 
+import json
 import logging
 import os
 import sys
@@ -89,13 +90,6 @@ class DataTrainingArguments:
         default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
     )
     train_file: Optional[str] = field(default=None, metadata={"help": "The input training data file (a jsonlines)."})
-    validation_file: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "An optional input evaluation data file to evaluate the metrics (sacreblue) on "
-            "a jsonlines file."
-        },
-    )
     test_file: Optional[str] = field(
         default=None,
         metadata={
@@ -187,7 +181,7 @@ class DataTrainingArguments:
     )
 
     def __post_init__(self):
-        if self.dataset_name is None and self.train_file is None and self.validation_file is None and self.test_file \
+        if self.dataset_name is None and self.train_file is None and self.test_file \
                 is None:
             raise ValueError("Need either a dataset name or a training/validation file.")
         elif self.source_lang is None or self.target_lang is None:
@@ -196,9 +190,6 @@ class DataTrainingArguments:
         if self.train_file is not None:
             extension = self.train_file.split(".")[-1]
             assert extension == "json", "`train_file` should be a json file."
-        if self.validation_file is not None:
-            extension = self.validation_file.split(".")[-1]
-            assert extension == "json", "`validation_file` should be a json file."
         if self.test_file is not None:
             extension = self.test_file.split('.')[-1]
             assert extension == "json", "test_file` should be a json file."
@@ -248,9 +239,6 @@ def main():
     if data_args.train_file is not None:
         data_files["train"] = data_args.train_file
         extension = data_args.train_file.split(".")[-1]
-    if data_args.validation_file is not None:
-        data_files["validation"] = data_args.validation_file
-        extension = data_args.validation_file.split(".")[-1]
     if data_args.test_file is not None:
         data_files["test"] = data_args.test_file
         extension = data_args.test_file.split(".")[-1]
@@ -442,11 +430,11 @@ def main():
         predict_results = trainer.predict(
             predict_dataset, metric_key_prefix="predict", max_length=max_length, num_beams=num_beams
         )
-        metrics = predict_results.metrics
-        max_predict_samples = (
-            data_args.max_predict_samples if data_args.max_predict_samples is not None else len(predict_dataset)
-        )
-        metrics["predict_samples"] = min(max_predict_samples, len(predict_dataset))
+        # metrics = predict_results.metrics
+        # max_predict_samples = (
+        #     data_args.max_predict_samples if data_args.max_predict_samples is not None else len(predict_dataset)
+        # )
+        # metrics["predict_samples"] = min(max_predict_samples, len(predict_dataset))
 
         # trainer.log_metrics("predict", metrics)
         # trainer.save_metrics("predict", metrics)
@@ -456,28 +444,14 @@ def main():
                 predictions = tokenizer.batch_decode(
                     predict_results.predictions, skip_special_tokens=True, clean_up_tokenization_spaces=True
                 )
-                predictions = [pred.strip() for pred in predictions]
-                output_prediction_file = os.path.join(training_args.output_dir, "generated_predictions.txt")
+                res_container = {"translations": {}}
+                for i, candidates in enumerate(predictions):
+                    res_container["translations"][f"instance_{i}"] = [
+                        cand.strip() for cand in candidates
+                    ]
+                output_prediction_file = os.path.join(training_args.output_dir, "generated_predictions.json")
                 with open(output_prediction_file, "w", encoding="utf-8") as writer:
-                    writer.write("\n".join(predictions))
-
-    kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "translation"}
-    if data_args.dataset_name is not None:
-        kwargs["dataset_tags"] = data_args.dataset_name
-        if data_args.dataset_config_name is not None:
-            kwargs["dataset_args"] = data_args.dataset_config_name
-            kwargs["dataset"] = f"{data_args.dataset_name} {data_args.dataset_config_name}"
-        else:
-            kwargs["dataset"] = data_args.dataset_name
-
-    languages = [l for l in [data_args.source_lang, data_args.target_lang] if l is not None]
-    if len(languages) > 0:
-        kwargs["language"] = languages
-
-    if training_args.push_to_hub:
-        trainer.push_to_hub(**kwargs)
-    else:
-        trainer.create_model_card(**kwargs)
+                    writer.write(json.dumps(res_container, indent=4, ensure_ascii=False))
 
     return results
 

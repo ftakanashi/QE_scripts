@@ -189,3 +189,19 @@ class AdaptMBartTokenizer(XLMRobertaTokenizer):
         self.cur_lang_code = self.lang_code_to_id[lang]
         self.prefix_tokens = []
         self.suffix_tokens = [self.eos_token_id, self.cur_lang_code]
+
+    def batch_decode(
+            self, sequences_batches: List[List[List[int]]], skip_special_tokens: bool = False, clean_up_tokenization_spaces: bool = True
+    ) -> List[List[str]]:
+
+        total_res = []
+
+        for sequences in sequences_batches:
+            total_res.append([
+                self.decode(
+                    seq, skip_special_tokens=skip_special_tokens, clean_up_tokenization_spaces=clean_up_tokenization_spaces
+                )
+                for seq in sequences
+            ])
+
+        return total_res

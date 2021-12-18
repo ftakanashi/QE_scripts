@@ -4,10 +4,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 
+from tqdm import tqdm
 from transformers.trainer import Trainer
-from transformers.trainer_utils import PredictionOutput
+from transformers.trainer_utils import PredictionOutput, nested_concat, nested_numpify, distributed_concat
 from transformers.utils import logging
 
 logger = logging.get_logger(__name__)
@@ -102,6 +103,92 @@ class Seq2SeqTrainer(Trainer):
         self._num_beams = num_beams if num_beams is not None else self.args.generation_num_beams
         return super().predict(test_dataset)
 
+    def prediction_loop(
+        self, dataloader: DataLoader, description: str, prediction_loss_only: Optional[bool] = None
+    ) -> PredictionOutput:
+
+        prediction_loss_only = (
+            prediction_loss_only if prediction_loss_only is not None else self.args.prediction_loss_only
+        )
+
+        assert not getattr(
+            self.model.config, "output_attentions", False
+        ), "The prediction loop does not work with `output_attentions=True`."
+        assert not getattr(
+            self.model.config, "output_hidden_states", False
+        ), "The prediction loop does not work with `output_hidden_states=True`."
+
+        model = self.model
+        # multi-gpu eval
+        if self.args.n_gpu > 1:
+            model = torch.nn.DataParallel(model)
+        else:
+            model = self.model
+        # Note: in torch.distributed mode, there's no point in wrapping the model
+        # inside a DistributedDataParallel as we'll be under `no_grad` anyways.
+
+        batch_size = dataloader.batch_size
+        logger.info("***** Running %s *****", description)
+        logger.info("  Num examples = %d", self.num_examples(dataloader))
+        logger.info("  Batch size = %d", batch_size)
+        eval_losses: List[float] = []
+        preds: torch.Tensor = None
+        label_ids: torch.Tensor = None
+        model.eval()
+
+        if self.args.past_index >= 0:
+            self._past = None
+
+        disable_tqdm = not self.is_local_process_zero() or self.args.disable_tqdm
+        for inputs in tqdm(dataloader, desc=description, disable=disable_tqdm):
+            loss, logits, labels = self.prediction_step(model, inputs, prediction_loss_only)
+            batch_size = inputs[list(inputs.keys())[0]].shape[0]
+            if loss is not None:
+                eval_losses.extend([loss] * batch_size)
+            if logits is not None:
+                preds = logits if preds is None else nested_concat(preds, logits, dim=0)
+            if labels is not None:
+                label_ids = labels if label_ids is None else nested_concat(label_ids, labels, dim=0)
+
+        if self.args.past_index and hasattr(self, "_past"):
+            # Clean the state at the end of the evaluation loop
+            delattr(self, "_past")
+
+        if self.args.local_rank != -1:
+            # In distributed mode, concatenate all results from all nodes:
+            if preds is not None:
+                preds = distributed_concat(preds, num_total_examples=self.num_examples(dataloader))
+            if label_ids is not None:
+                label_ids = distributed_concat(label_ids, num_total_examples=self.num_examples(dataloader))
+
+        # Finally, turn the aggregated tensors into numpy arrays.
+        preds = preds.reshape(-1, self._num_beams or self.model.config.num_beams, self._max_length)
+        if preds is not None:
+            preds = nested_numpify(preds)
+        if label_ids is not None:
+            label_ids = nested_numpify(label_ids)
+
+        # if self.compute_metrics is not None and preds is not None and label_ids is not None:
+        #     metrics = self.compute_metrics(EvalPrediction(predictions=preds, label_ids=label_ids))
+        # else:
+        #     metrics = {}
+        # if len(eval_losses) > 0:
+        #     if self.args.local_rank != -1:
+        #         metrics["eval_loss"] = (
+        #             distributed_broadcast_scalars(eval_losses, num_total_examples=self.num_examples(dataloader))
+        #                 .mean()
+        #                 .item()
+        #         )
+        #     else:
+        #         metrics["eval_loss"] = np.mean(eval_losses)
+        #
+        # # Prefix all keys with eval_
+        # for key in list(metrics.keys()):
+        #     if not key.startswith("eval_"):
+        #         metrics[f"eval_{key}"] = metrics.pop(key)
+
+        return PredictionOutput(predictions=preds, label_ids=label_ids, metrics=None)
+
     def prediction_step(
         self,
         model: nn.Module,
@@ -144,6 +231,7 @@ class Seq2SeqTrainer(Trainer):
             "num_beams": self._num_beams if self._num_beams is not None else self.model.config.num_beams,
             "synced_gpus": False,
         }
+        gen_kwargs['num_return_sequences'] = gen_kwargs['num_beams']    # by default, we generate exact same sequences as beams
 
         # if self.tokenizer is not None:
         #     generation_inputs = {k: v for k, v in inputs.items() if k in self.tokenizer.model_input_names}
@@ -163,16 +251,9 @@ class Seq2SeqTrainer(Trainer):
 
         with torch.no_grad():
             outputs = model(**inputs)
-            if has_labels:
-                if self.label_smoother is not None:
-                    loss = self.label_smoother(outputs, inputs["labels"]).mean().detach()
-                else:
-                    loss = (outputs["loss"] if isinstance(outputs, dict) else outputs[0]).mean().detach()
-            else:
-                loss = None
+            loss = outputs[0].mean().detach()
 
-        if self.args.prediction_loss_only:
-            return (loss, None, None)
+        if self.args.prediction_loss_only: return (loss, None, None)
 
         labels = inputs["labels"]
         if labels.shape[-1] < gen_kwargs["max_length"]:
