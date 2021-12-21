@@ -3,24 +3,10 @@
 """
 This script is modified from transformers-v4.12.4/examples/translation/run_translation.py
 Usage:
---model_name_or_path
-tmp_model/mbart-large-cc25
---source_lang
-en_XX
---target_lang
-zh_CN
---do_train
---train_file
-tmp_data/train.json
---learning_rate
-3e-5
---per_device_train_batch_size
-8
---output_dir
-tmp_output
---overwrite_cache
---preprocessing_num_workers
-4
+python run_mbart_prompt.py --model_name_or_path mbart-large-cc25 --source_lang en_XX --target_lang zh_CN
+--do_train --train_file train.json --learning_rate 3e-5 --per_device_train_batch_size 8 --output_dir output
+--overwrite_cache --preprocess_num_workers 4
+--do_eval --test_file test.json --predict_with_generate
 """
 # You can also adapt this script on your own sequence to sequence task. Pointers for this are left as comments.
 
