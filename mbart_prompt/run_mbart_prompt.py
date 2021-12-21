@@ -32,6 +32,9 @@ from transformers import (
     set_seed,
 )
 
+ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(ROOT))
+
 from mbart_prompt.myutils.data_collator import DataCollatorForSeq2Seq
 from mbart_prompt.myutils.modeling_bart import MBartForConditionalGeneration
 from mbart_prompt.myutils.tokenization_mbart import AdaptMBartTokenizer as MBartTokenizer
