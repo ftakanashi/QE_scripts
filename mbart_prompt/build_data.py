@@ -15,15 +15,15 @@ def parse_args():
                         help="Prefix of all input files.")
     parser.add_argument("-o", "--output", type=str,
                         help="Path to the output file.")
-    parser.add_argument("--blank_token", type=str, default="*",
-                        help="Representation of [blank].")
-    parser.add_argument("--answer_token", type=str, default="&",
-                        help="Representation of [answer].")
+    parser.add_argument("--blank_token", type=str, default="¶",
+                        help="Representation of [blank]. Default: '¶'")
+    parser.add_argument("--answer_token", type=str, default="※",
+                        help="Representation of [answer]. Default: '※'")
 
     parser.add_argument("--source_lang", type=str, default="en_XX",
-                        help="Source language code for mBART.")
+                        help="Source language code for mBART. Default: en_XX")
     parser.add_argument("--target_lang", type=str, default="zh_CN",
-                        help="Target language code for mBART.")
+                        help="Target language code for mBART. Default: zh_CN")
     parser.add_argument('--ignore_zero_blank', action='store_true', default=False,
                         help='Set this flag to ignore the samples without any blanks.')
     
