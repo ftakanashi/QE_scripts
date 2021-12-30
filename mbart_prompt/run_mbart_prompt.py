@@ -4,12 +4,13 @@
 This script is modified from transformers-v4.12.4/examples/translation/run_translation.py
 Usage:
 python run_mbart_prompt.py --model_name_or_path mbart-large-cc25 --source_lang en_XX --target_lang zh_CN
---do_train --train_file train.json --learning_rate 3e-5 --per_device_train_batch_size 8 --output_dir output
---overwrite_cache --preprocess_num_workers 4
+--do_train --train_file train.json --learning_rate 3e-5 --per_device_train_batch_size 8 --num_train_epochs 5.0
+--output_dir output --overwrite_cache --logging_steps 10
 --do_eval --test_file test.json --predict_with_generate
 """
 # You can also adapt this script on your own sequence to sequence task. Pointers for this are left as comments.
 
+import datetime
 import json
 import logging
 import os
@@ -32,9 +33,8 @@ from transformers import (
     set_seed,
 )
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.abspath(__file__))    # import adaption
 sys.path.append(os.path.dirname(ROOT))
-
 from mbart_prompt.myutils.data_collator import DataCollatorForSeq2Seq
 from mbart_prompt.myutils.modeling_bart import MBartForConditionalGeneration
 from mbart_prompt.myutils.tokenization_mbart import AdaptMBartTokenizer as MBartTokenizer
@@ -169,6 +169,15 @@ class DataTrainingArguments:
         },
     )
 
+    answer_token: Optional[str] = field(
+        default="※",
+        metadata={"help": "Specify the [answer] token used in data. Default: ※"}
+    )
+    merge_space_evaluate: bool = field(
+        default=True,
+        metadata={"help": "Set this flag to merge spaces between tokens when doing evaluation."}
+    )
+
     def __post_init__(self):
         if self.dataset_name is None and self.train_file is None and self.test_file \
                 is None:
@@ -185,6 +194,73 @@ class DataTrainingArguments:
         if self.val_max_target_length is None:
             self.val_max_target_length = self.max_target_length
 
+
+def analyze_result(data_args, res_container, target_lang):
+    generated_lines = res_container["translations"]
+    with open(data_args.test_file) as f:
+        ref_lines = [l.strip() for l in f]
+
+    assert len(ref_lines) == len(generated_lines), "Line number of test_file and generated content does not match."
+
+    answer_token = data_args.answer_token
+
+    all_answer_info = {
+        "answer_matrix": [],
+        "answer_matrix_trans": [],
+        "top_1_match": [],
+        "top_n_match": []
+    }
+    for line_i in range(len(ref_lines)):
+        ref_info = json.loads(ref_lines[line_i])["translation"]
+        gen_seqs = generated_lines[f"instance_{line_i}"]
+
+        labels = []
+        for span in ref_info[target_lang].strip().split(answer_token):
+            if span == "": continue
+            if data_args.merge_space_evaluate:
+                labels.append("".join([ch for ch in span if ch != " "]))
+            else:
+                labels.append(span.strip())
+
+        num_beam = len(gen_seqs)
+        num_span = len(labels)
+        answer_matrix = [[None for _ in range(num_span)] for _ in range(num_beam)]
+        for seq_i, seq in enumerate(gen_seqs):
+            seq_spans = []
+            for span in seq.strip().split(answer_token):
+                if span == "": continue
+                if data_args.merge_space_evaluate:
+                    seq_spans.append("".join([ch for ch in span if ch != " "]))
+                else:
+                    seq_spans.append(span.strip())
+
+            for span_i, seq_span in enumerate(seq_spans):
+                if span_i == len(answer_matrix[0]): break
+                answer_matrix[seq_i][span_i] = seq_span
+
+        all_answer_info["answer_matrix"].append(answer_matrix)
+
+        # transpose
+        answer_matrix_trans = [[None for _ in range(num_beam)] for _ in range(num_span)]
+        for i in range(num_beam):
+            for j in range(num_span):
+                answer_matrix_trans[j][i] = answer_matrix[i][j]
+
+        all_answer_info["answer_matrix_trans"].append(answer_matrix_trans)
+
+        # do the math
+        top_1_match = [False for _ in range(num_span)]
+        top_n_match = [False for _ in range(num_span)]
+        for span_i in range(num_span):
+            if labels[span_i] == answer_matrix_trans[span_i][0]:
+                top_1_match[span_i] = True
+                top_n_match[span_i] = True
+            elif labels[span_i] in answer_matrix_trans[span_i]:
+                top_n_match[span_i] = True
+        all_answer_info["top_1_match"].append(top_1_match)
+        all_answer_info["top_n_match"].append(top_n_match)
+
+    return all_answer_info
 
 def main():
 
@@ -441,6 +517,38 @@ def main():
                 output_prediction_file = os.path.join(training_args.output_dir, "generated_predictions.json")
                 with open(output_prediction_file, "w", encoding="utf-8") as writer:
                     writer.write(json.dumps(res_container, indent=4, ensure_ascii=False))
+
+                def write_fn(fn, content):
+                    with open(os.path.join(training_args.output_dir, fn), "w", encoding="utf-8") as f:
+                        f.write(content)
+
+                analysis = analyze_result(data_args, res_container, target_lang)
+                timestp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                write_fn("generated_answer_matrix.json", json.dumps({
+                    "time": timestp,
+                    "content": analysis["answer_matrix"]
+                }, ensure_ascii=False, indent=4))
+
+                write_fn("generated_answer_matrix_transpose.json", json.dumps({
+                    "time": timestp,
+                    "content": analysis["answer_matrix_trans"]
+                }, ensure_ascii=False, indent=4))
+
+                top_1_true = top_1_total = 0
+                for instance in analysis["top_1_match"]:
+                    for flag in instance:
+                        if flag: top_1_true += 1
+                        top_1_total += 1
+
+                top_n_true = top_n_total = 0
+                for instance in analysis["top_n_match"]:
+                    for flag in instance:
+                        if flag: top_n_true += 1
+                        top_n_total += 1
+                msg = f"Top 1 Match: {top_1_true / top_1_total:.4f} ({top_1_true}/{top_1_total})\n" \
+                      f"Top n Match: {top_n_true / top_1_total:.4f} ({top_n_true}/{top_n_total})"
+                write_fn("top_n_analysis.txt", msg)
 
     return results
 
