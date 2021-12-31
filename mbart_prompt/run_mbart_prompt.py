@@ -524,16 +524,24 @@ def main():
 
                 analysis = analyze_result(data_args, res_container, target_lang)
                 timestp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                generated_results_dir = os.path.join(training_args.output_dir, "generated_results")
+                os.makedirs(generated_results_dir, exist_ok=True)
 
-                write_fn("generated_answer_matrix.json", json.dumps({
-                    "time": timestp,
-                    "content": analysis["answer_matrix"]
-                }, ensure_ascii=False, indent=4))
+                answer_matrix_str = f"time: {timestp}\n\n"
+                for i, instance in enumerate(analysis["answer_matrix"]):
+                    answer_matrix_str += f"\n[Instance {i}]\n"
+                    answer_matrix_str += "\n".join(
+                        ["\t".join([span if span else "null" for span in seq]) for seq in instance]
+                    )
+                write_fn(os.path.join(generated_results_dir, "answer_per_seq.txt"), answer_matrix_str)
 
-                write_fn("generated_answer_matrix_transpose.json", json.dumps({
-                    "time": timestp,
-                    "content": analysis["answer_matrix_trans"]
-                }, ensure_ascii=False, indent=4))
+                answer_matrix_transpose_str = f"time: {timestp}\n\n"
+                for i, instance in enumerate(analysis["answer_matrix_trans"]):
+                    answer_matrix_transpose_str += f"\n[Instance {i}]\n"
+                    answer_matrix_transpose_str += "\n".join(
+                        ["\t".join([cand if cand else "null" for cand in blank]) for blank in instance]
+                    )
+                write_fn(os.path.join(generated_results_dir, "answer_per_blank.txt"), answer_matrix_transpose_str)
 
                 top_1_true = top_1_total = 0
                 for instance in analysis["top_1_match"]:
@@ -548,7 +556,7 @@ def main():
                         top_n_total += 1
                 msg = f"Top 1 Match: {top_1_true / top_1_total:.4f} ({top_1_true}/{top_1_total})\n" \
                       f"Top n Match: {top_n_true / top_1_total:.4f} ({top_n_true}/{top_n_total})"
-                write_fn("top_n_analysis.txt", msg)
+                write_fn(os.path.join(generated_results_dir, "match_rate.txt"), msg)
 
     return results
 
