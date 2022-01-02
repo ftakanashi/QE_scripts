@@ -519,7 +519,7 @@ def main():
                     writer.write(json.dumps(res_container, indent=4, ensure_ascii=False))
 
                 def write_fn(fn, content):
-                    with open(os.path.join(training_args.output_dir, fn), "w", encoding="utf-8") as f:
+                    with open(fn, "w", encoding="utf-8") as f:
                         f.write(content)
 
                 analysis = analyze_result(data_args, res_container, target_lang)
