@@ -33,7 +33,7 @@ from transformers import (
     set_seed,
 )
 
-ROOT = os.path.dirname(os.path.abspath(__file__))    # import adaption
+ROOT = os.path.dirname(os.path.abspath(__file__))    # importation adaption
 sys.path.append(os.path.dirname(ROOT))
 from mbart_prompt.myutils.data_collator import DataCollatorForSeq2Seq
 from mbart_prompt.myutils.modeling_bart import MBartForConditionalGeneration
@@ -173,9 +173,9 @@ class DataTrainingArguments:
         default="※",
         metadata={"help": "Specify the [answer] token used in data. Default: ※"}
     )
-    merge_space_evaluate: bool = field(
-        default=True,
-        metadata={"help": "Set this flag to merge spaces between tokens when doing evaluation."}
+    results_dir: Optional[str] = field(
+        default="results",
+        metadata={"help": "Output directory to save the results. It will be generated inside output_dir."}
     )
 
     def __post_init__(self):
@@ -217,10 +217,7 @@ def analyze_result(data_args, res_container, target_lang):
         labels = []
         for span in ref_info[target_lang].strip().split(answer_token):
             if span == "": continue
-            if data_args.merge_space_evaluate:
-                labels.append("".join([ch for ch in span if ch != " "]))
-            else:
-                labels.append(span.strip())
+            labels.append("".join([ch for ch in span if ch != " "]))
 
         num_beam = len(gen_seqs)
         num_span = len(labels)
@@ -229,10 +226,7 @@ def analyze_result(data_args, res_container, target_lang):
             seq_spans = []
             for span in seq.strip().split(answer_token):
                 if span == "": continue
-                if data_args.merge_space_evaluate:
-                    seq_spans.append("".join([ch for ch in span if ch != " "]))
-                else:
-                    seq_spans.append(span.strip())
+                seq_spans.append("".join([ch for ch in span if ch != " "]))
 
             for span_i, seq_span in enumerate(seq_spans):
                 if span_i == len(answer_matrix[0]): break
@@ -287,6 +281,8 @@ def main():
         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
     )
     logger.info(f"Training/evaluation parameters {training_args}")
+    logger.info(f"Model parameters {model_args}")
+    logger.info(f"Data parameters {data_args}")
 
     # Set seed before initializing model.
     set_seed(training_args.seed)
@@ -523,24 +519,26 @@ def main():
                         f.write(content)
 
                 analysis = analyze_result(data_args, res_container, target_lang)
-                timestp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                generated_results_dir = os.path.join(training_args.output_dir, "generated_results")
+                # timestp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                generated_results_dir = os.path.join(training_args.output_dir, data_args.results_dir)
                 os.makedirs(generated_results_dir, exist_ok=True)
 
-                answer_matrix_str = f"time: {timestp}\n\n"
+                answer_matrix_str = ""
                 for i, instance in enumerate(analysis["answer_matrix"]):
-                    answer_matrix_str += f"\n[Instance {i}]\n"
+                    answer_matrix_str += f"[Instance {i}]\n"
                     answer_matrix_str += "\n".join(
                         ["\t".join([span if span else "null" for span in seq]) for seq in instance]
                     )
+                    answer_matrix_str += "\n"
                 write_fn(os.path.join(generated_results_dir, "answer_per_seq.txt"), answer_matrix_str)
 
-                answer_matrix_transpose_str = f"time: {timestp}\n\n"
+                answer_matrix_transpose_str = ""
                 for i, instance in enumerate(analysis["answer_matrix_trans"]):
-                    answer_matrix_transpose_str += f"\n[Instance {i}]\n"
+                    answer_matrix_transpose_str += f"[Instance {i}]\n"
                     answer_matrix_transpose_str += "\n".join(
                         ["\t".join([cand if cand else "null" for cand in blank]) for blank in instance]
                     )
+                    answer_matrix_transpose_str += "\n"
                 write_fn(os.path.join(generated_results_dir, "answer_per_blank.txt"), answer_matrix_transpose_str)
 
                 top_1_true = top_1_total = 0
@@ -555,7 +553,7 @@ def main():
                         if flag: top_n_true += 1
                         top_n_total += 1
                 msg = f"Top 1 Match: {top_1_true / top_1_total:.4f} ({top_1_true}/{top_1_total})\n" \
-                      f"Top n Match: {top_n_true / top_1_total:.4f} ({top_n_true}/{top_n_total})"
+                      f"Top n Match: {top_n_true / top_1_total:.4f} ({top_n_true}/{top_n_total})\n"
                 write_fn(os.path.join(generated_results_dir, "match_rate.txt"), msg)
 
     return results
