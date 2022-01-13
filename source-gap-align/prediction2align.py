@@ -18,8 +18,9 @@ from tqdm import tqdm
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-s", "--src",
-                        help="Path to the source corpus. We only need its line number.")
+    parser.add_argument("-t", "--mt",
+                        help="Path to the MT corpus."
+                             "It is used for referring to line number and token length.")
 
     parser.add_argument('-p', '--pred-json', default=None,
                         help='Path to prediction.json')
@@ -27,10 +28,13 @@ def parse_args():
     parser.add_argument('-d', '--pred-output-dir', default=None,
                         help='Path to the output dir where output.N for shard N is saved.')
 
-    parser.add_argument('-o', '--output', required=True)
+    parser.add_argument("-ao", "--align_output",
+                        help="Path to the alignment output file.")
+    parser.add_argument("-to", "--tag_output",
+                        help="Path to the MT gap tag output file.")
 
-    parser.add_argument('--prob-threshold', type=float, default=0.4,
-                        help='Threshold for alignment extraction. Default: 0.4')
+    parser.add_argument("--prob-threshold", type=float, default=0.4,
+                        help="Threshold for alignment extraction. Default: 0.4")
 
     opt = parser.parse_args()
 
@@ -109,7 +113,7 @@ def process_one_line(sent_align_info, opt):
             raise ValueError(f"Error encountered while parsing key {k}")
 
     alignments.sort()
-    return [f"{a}-{b}" for (a, b) in alignments]
+    return alignments
 
 def main():
     opt = parse_args()
@@ -136,20 +140,24 @@ def main():
 
             info.update(sub_info)
 
-    wf = open(opt.output, 'w')
+    with open(opt.mt) as f:
+        mt_lines = [l.strip() for l in f]
+    line_nums = len(mt_lines)
 
-    with open(opt.src) as f:
-        lines = [l.strip() for l in f]
-        line_nums = len(lines)
-
+    align_wf = open(opt.align_output, "w")
+    tag_wf =  open(opt.tag_output, "w")
     for sent_id in tqdm(range(line_nums), mininterval=1.0):
+        mt_len = len(mt_lines[sent_id].strip().split())
+        gap_tags = ["OK" for _ in range(mt_len + 1)]
         if sent_id not in info:
             aligns = []
         else:
-            if sent_id == 28:
-                print("here")
             aligns = process_one_line(info[sent_id], opt)
-        wf.write(' '.join(aligns) + '\n')
+            for _, gap_i in aligns:
+                gap_tags[gap_i // 2] = "INS"
+
+        align_wf.write(" ".join([f"{a}-{b}" for a, b in aligns]) + "\n")
+        tag_wf.write(" ".join(gap_tags) + "\n")
 
 if __name__ == '__main__':
     main()
