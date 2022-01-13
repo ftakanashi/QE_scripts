@@ -259,7 +259,7 @@ def main():
         s2t_align = s2t_aligns[i]
         t2s_align = t2s_aligns[i]
 
-        if len(s2t_align) == 0 and len(t2s_align) == 0:
+        if not args.keep_empty_case and len(s2t_align) == 0 and len(t2s_align) == 0:
             continue
 
         s2t_one_pair_res_para, t2s_one_pair_res_para, p_c, imp_c = \
@@ -317,6 +317,10 @@ def parse_args():
     parser.add_argument('--special_token', default='¶',
                         help='The special token that mark a word in the query. Make sure that the token is in '
                              'vocabulary of mBERT.')
+
+    parser.add_argument("--keep_empty_case", action="store_true", default=False,
+                        help="Keep empty cases (sentence pairs without src-gap alignments) in the generated data."
+                             "You might add this flag if you're generating test data.")
 
     args = parser.parse_args()
 
