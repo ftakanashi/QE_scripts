@@ -6,6 +6,7 @@ pe-mt-align/model
 pe-mt-align/tmp*
 cplex-scripts/tmp*
 mbart-prompt/tmp*
+source-gap-align/tmp*
 source-mt-align/tmp*
 source-mt-align/run_scripts/tmp*
 source-pe-align/tmp*
