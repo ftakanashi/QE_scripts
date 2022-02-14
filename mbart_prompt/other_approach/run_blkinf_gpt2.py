@@ -2,17 +2,17 @@
 
 """
 Modified from transformers-v3.3.1 run_language_modeling.py
-The script runs MLM only and accept already masked data as input.
+The script accepts blanked input & answer sequence and trains model for CLM.
 
-python run_mlm.py --model_name_or_path m-bert --model_type bert --do_train --train_data_file train.json
+python <THIS SCRIPT> --model_name_or_path gpt2-chinese --model_type gpt2 --do_train --train_data_file train.json
 --output_dir output --overwrite_output_dir --overwrite_cache --learning_rate 3e-5 --num_train_epochs 5.0 --logging_steps 10
 --do_eval --test_data_file test.json --nbest 5 --mask_n_repeat 1 --results_dir results.m1.n5
 """
 
 import logging
-import json
 import os
 import sys
+import warnings
 
 from dataclasses import dataclass, field
 from typing import Optional
@@ -31,15 +31,17 @@ from transformers import (
 
 ROOT = os.path.dirname(os.path.abspath(__file__))    # importation adaption
 sys.path.append(os.path.dirname(os.path.dirname(ROOT)))
-from mbart_prompt.other_approach.myutils.dataset import AlreadyMaskedLineDatasetForMLM
-from mbart_prompt.other_approach.myutils.datacollator import DataCollatorForMaskedLanguageModeling
-from mbart_prompt.other_approach.myutils.modeling_xlmr import MyXLMRobertaForMaskedLM
+from mbart_prompt.other_approach.myutils.dataset import AlreadyMaskedLineDatasetForCLM
+from mbart_prompt.other_approach.myutils.datacollator import DataCollatorForBlankInfilling
 from mbart_prompt.other_approach.myutils.trainer import MyTrainer
 
 logger = logging.getLogger(__name__)
 
 MODEL_CONFIG_CLASSES = list(MODEL_WITH_LM_HEAD_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
+
+BLANK_TOKEN = "[BLK]"
+ANSWER_TOKEN = "[ANS]"
 
 @dataclass
 class ModelArguments:
@@ -128,7 +130,7 @@ def get_dataset(
     file_path = data_args.test_data_file if evaluate else data_args.train_data_file
     short_src_lang = data_args.src_lang.split("_")[0]
     short_tgt_lang = data_args.tgt_lang.split("_")[0]
-    return AlreadyMaskedLineDatasetForMLM(
+    return AlreadyMaskedLineDatasetForCLM(
         tokenizer=tokenizer,
         file_path=file_path,
         block_size=data_args.block_size,
@@ -136,8 +138,10 @@ def get_dataset(
         with_src=model_args.model_type == "xlm-roberta",
         src_lang=short_src_lang,
         tgt_lang=short_tgt_lang,
-        blank_token=data_args.blank_token,
-        answer_token=data_args.answer_token,
+        blank_token_in_data=data_args.blank_token,
+        answer_token_in_data=data_args.answer_token,
+        blank_token_for_model=BLANK_TOKEN,
+        answer_token_for_model=ANSWER_TOKEN,
         mask_n_repeat=data_args.mask_n_repeat
     )
 
@@ -194,28 +198,28 @@ def main():
     if model_args.tokenizer_name:
         tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, cache_dir=model_args.cache_dir)
     elif model_args.model_name_or_path:
-        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, cache_dir=model_args.cache_dir)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_args.model_name_or_path, cache_dir=model_args.cache_dir
+        )
     else:
         raise ValueError(
             "You are instantiating a new tokenizer from scratch. This is not supported, but you can do it from another script, save it,"
             "and load it from here, using --tokenizer_name"
         )
 
+    # adapt special tokens for blank infilling so that tokenizer won't split them
+    vocab = tokenizer.get_vocab()
+    assert BLANK_TOKEN in vocab and ANSWER_TOKEN in vocab, f"Please manually replace some UNUSED tokens with {BLANK_TOKEN} and {ANSWER_TOKEN}"
+    del vocab
+    tokenizer.add_tokens([BLANK_TOKEN, ANSWER_TOKEN], special_tokens=True)
+
     if model_args.model_name_or_path:
-        if model_args.model_type == "xlm-roberta":
-            model = MyXLMRobertaForMaskedLM.from_pretrained(
-                model_args.model_name_or_path,
-                from_tf=False,
-                config=config,
-                cache_dir=model_args.cache_dir
-            )
-        else:
-            model = AutoModelWithLMHead.from_pretrained(
-                model_args.model_name_or_path,
-                from_tf=bool(".ckpt" in model_args.model_name_or_path),
-                config=config,
-                cache_dir=model_args.cache_dir,
-            )
+        model = AutoModelWithLMHead.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+        )
     else:
         logger.info("Training new model from scratch")
         model = AutoModelWithLMHead.from_config(config)
@@ -236,10 +240,7 @@ def main():
         get_dataset(data_args, model_args, tokenizer=tokenizer, evaluate=True) if training_args.do_eval else None
     )
 
-    data_collator = DataCollatorForMaskedLanguageModeling(
-        tokenizer=tokenizer,
-        with_src=model_args.model_type == "xlm-roberta"
-    )
+    data_collator = DataCollatorForBlankInfilling(tokenizer=tokenizer)
 
     # Initialize our Trainer
     trainer = MyTrainer(
@@ -266,98 +267,9 @@ def main():
 
     # Evaluation
     if training_args.do_eval:
-        logger.info("*** Evaluate ***")
-
-        test_dataloader = trainer.get_test_dataloader(test_dataset)
-        eval_output = trainer.prediction_loop(test_dataloader, description="Prediction", prediction_loss_only=False,
-                                              nbest=data_args.nbest)
-
-        res = analyze_output(eval_output, data_args, model_args, tokenizer)
-        result = res["text_res"]
-        msg = res["msg_res"]
-
-        results_dir = os.path.join(training_args.output_dir, data_args.results_dir)
-        os.makedirs(results_dir, exist_ok=True)
-        all_res_output = os.path.join(results_dir, "answer_per_blank.txt")
-        rate_output = os.path.join(results_dir, "match_rate.txt")
-        if trainer.is_world_master():
-            logger.info("***** Eval results *****")
-            with open(all_res_output, "w") as writer:
-                for row_i, row_res in enumerate(result):
-                    writer.write(f"[instance_{row_i}]\n")
-                    for mask_cands in row_res:
-                        writer.write("\t".join(mask_cands) + "\n")
-
-            wf = open(rate_output, "w")
-            wf.write(msg)
-            wf.close()
-
-def analyze_output(output, data_args, model_args, tokenizer):
-    preds, labels, loss = output
-
-    with open(data_args.test_data_file, "r") as f:
-        instances = [json.loads(l.strip())["translation"] for l in f]
-
-    assert len(preds) == len(instances), "Instance number not match between prediction and input test data file."
-
-    # collate continuous mask_n_repeat candidates for one blank
-    tgt_short = data_args.tgt_lang.split("_")[0]
-    answer_token = data_args.answer_token
-    mask_n_repeat = data_args.mask_n_repeat
-    res_container = []
-    total_cnt = match_1_cnt = match_n_cnt = 0
-    for instance_i, instance in enumerate(instances):
-        answer_spans = [span for span in instance[tgt_short].strip().split(answer_token) if len(span) > 0]
-        instance_preds = preds[instance_i]
-        mask_num = instance_preds.shape[0]
-        assert mask_num // mask_n_repeat == len(answer_spans), "Answer span number not match"
-
-        instance_res = []
-        for span_i, span in enumerate(answer_spans):
-            span = "".join(span.strip().split())
-
-            cands = instance_preds[span_i * mask_n_repeat:span_i * mask_n_repeat + mask_n_repeat]
-            joined_cands_strs = []
-            for blank_cand_ids in cands.T:
-                blank_cand_str = "".join(tokenizer.convert_ids_to_tokens(blank_cand_ids))
-                if model_args.model_type == "xlm-roberta":
-                    tmp = ""
-                    for ch in blank_cand_str:
-                        if ch == "▁": continue
-                        tmp += ch
-                    blank_cand_str = tmp
-                joined_cands_strs.append(blank_cand_str)
-
-            instance_res.append(joined_cands_strs)
-            total_cnt += 1
-            if span in joined_cands_strs:
-                match_n_cnt += 1
-                if span == joined_cands_strs[0]:
-                    match_1_cnt += 1
-
-        res_container.append(instance_res)
-
-    # batch_size, seq_len = labels.shape
-    # res_container = []
-    # total_cnt = match_1_cnt = match_n_cnt = 0
-    # for batch_i in range(batch_size):
-    #     row_res = []
-    #     for token_j in range(seq_len):
-    #         label = labels[batch_i, token_j]
-    #         if label == -100: continue
-    #         total_cnt += 1
-    #         cands = pred_scores[batch_i, token_j].topk(data_args.nbest)[1]
-    #         if label in cands:
-    #             match_n_cnt += 1
-    #             if label == cands[0]: match_1_cnt += 1
-    #
-    #         row_res.append(tokenizer.convert_ids_to_tokens(cands))
-    #
-    #     res_container.append(row_res)
-
-    msg = f"Top 1 Match: {match_1_cnt / total_cnt:.4f} ({match_1_cnt} / {total_cnt})\n" \
-          f"Top n Match: {match_n_cnt / total_cnt:.4f} ({match_n_cnt} / {total_cnt})\n"
-    return {"text_res": res_container, "msg_res": msg}
+        raise NotImplementedError("Training is over. But this script is only for training. "
+                                  "For testing and evaluation, please refer to run_blkinf_gpt2_gen.py which should be"
+                                  " placed in the same position as this script.")
 
 if __name__ == "__main__":
     main()

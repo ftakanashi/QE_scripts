@@ -14,7 +14,8 @@ from transformers import logging
 
 logger = logging.get_logger(__name__)
 
-class AlreadyMaskedLineDataset(Dataset):
+
+class AlreadyMaskedLineDatasetForMLM(Dataset):
 
     def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, block_size: int,
                  data_type="train", with_src=False, **kwargs):
@@ -93,7 +94,64 @@ class AlreadyMaskedLineDataset(Dataset):
 
         return orig_sents, masked_sents
 
-    def __len__(self):
+    def __len__(self) -> int:
+        return len(self.examples)
+
+    def __getitem__(self, i) -> Dict:
+        return self.examples[i]
+
+
+class AlreadyMaskedLineDatasetForCLM(Dataset):
+    def __init__(self, tokenizer: PreTrainedTokenizer, file_path: str, block_size: int,
+                 data_type="train", **kwargs):
+        assert os.path.isfile(file_path), f"Input file path {file_path} not found"
+        logger.info("Creating features from dataset file at %s", file_path)
+        self.tokenizer = tokenizer
+
+        self.is_train = data_type == "train"
+
+        self.src_lang = kwargs.get("src_lang", "en")
+        self.tgt_lang = kwargs.get("tgt_lang", "zh")
+        self.blank_token_in_data = kwargs.get("blank_token_in_data", "¶")
+        self.answer_token_in_data = kwargs.get("answer_token_in_data", "※")
+        self.blank_token_for_model = kwargs.get("blank_token_for_model", "[BLK]")
+        self.answer_token_for_model = kwargs.get("answer_token_for_model", "[ANS]")
+
+        logger.info("Start reading raw data...")
+        with open(file_path, encoding="utf-8") as f:
+            lines = [json.loads(l.strip())["translation"] for l in f]
+        logger.info("Raw data finished reading...")
+
+        self.examples = []
+        if self.is_train:
+            for info in tqdm(lines, mininterval=1, desc="Processing data"):
+
+                with_blank_tokens = info[f"{self.tgt_lang}_blank"].strip().split()
+                for i in range(len(with_blank_tokens)):
+                    if with_blank_tokens[i] == self.blank_token_in_data:
+                        with_blank_tokens[i] = self.blank_token_for_model
+
+                ans_seq_tokens = info[self.tgt_lang].strip().split()
+                for i in range(len(ans_seq_tokens)):
+                    if ans_seq_tokens[i] == self.answer_token_in_data:
+                        ans_seq_tokens[i] = self.answer_token_for_model
+
+                input_tokens = with_blank_tokens + [tokenizer.sep_token, ] + ans_seq_tokens
+                input_ids = tokenizer.encode(" ".join(input_tokens))
+                with_blank_id_len = len(tokenizer.encode(" ".join(with_blank_tokens), add_special_tokens=False))
+                labels = input_ids.copy()
+                labels[:with_blank_id_len + 2] = [-100] * (with_blank_id_len + 2)    # mask the blanked input part in labels
+                self.examples.append({
+                    "input_ids": input_ids,
+                    "labels": labels
+                })
+
+        else:
+            # process of reading test data is plainly written in the scripts for generation
+            # so that it's needless to implement construction of test dataset here
+            pass
+
+    def __len__(self) -> int:
         return len(self.examples)
 
     def __getitem__(self, i) -> Dict:

@@ -3,7 +3,7 @@
 """
 This script is modified from transformers-v4.12.4/examples/translation/run_translation.py
 Usage:
-python run_mbart_prompt.py --model_name_or_path mbart-large-cc25 --source_lang en_XX --target_lang zh_CN
+python <this script> --model_name_or_path mbart-large-cc25 --source_lang en_XX --target_lang zh_CN
 --do_train --train_file train.json --learning_rate 3e-5 --per_device_train_batch_size 8 --num_train_epochs 5.0
 --output_dir output --overwrite_cache --logging_steps 10
 --do_eval --test_file test.json --predict_with_generate
