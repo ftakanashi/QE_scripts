@@ -17,7 +17,7 @@ Example of usage:
 python <this script> --model_name_or_path mbart-large-cc25 --source_lang en_XX --target_lang zh_CN
 --do_train --train_file train.json --learning_rate 3e-5 --per_device_train_batch_size 8 --num_train_epochs 5.0
 --output_dir output --overwrite_cache --logging_steps 10
---do_eval --test_file test.json --predict_with_generate
+--do_eval --test_file test.json --predict_with_generate --match_standard character
 """
 
 import datetime
@@ -187,6 +187,15 @@ class DataTrainingArguments:
         default="results",
         metadata={"help": "Output directory to save the results. It will be generated inside output_dir."}
     )
+    match_standard: Optional[str] = field(
+        default="character",
+        metadata={
+            "choices": ["character", "token"],
+            "help": "Standard to judge whether generated answer matches label."
+                    "Set 'character' if the target language is character-based ones like Chinese or Japanese."
+                    "Set 'token' if the target language is token-based ones like German or English."
+        }
+    )
 
     def __post_init__(self):
         if self.dataset_name is None and self.train_file is None and self.test_file \
@@ -227,7 +236,10 @@ def analyze_result(data_args, res_container, target_lang):
         labels = []
         for span in ref_info[target_lang].strip().split(answer_token):
             if span == "": continue
-            labels.append("".join([ch for ch in span if ch != " "]))
+            if data_args.match_standard == "character":
+                labels.append("".join([ch for ch in span if ch != " "]))
+            else:
+                labels.append(span.strip().lower())
 
         num_beam = len(gen_seqs)
         num_span = len(labels)
@@ -236,7 +248,10 @@ def analyze_result(data_args, res_container, target_lang):
             seq_spans = []
             for span in seq.strip().split(answer_token):
                 if span == "": continue
-                seq_spans.append("".join([ch for ch in span if ch != " "]))
+                if data_args.match_standard == "character":
+                    seq_spans.append("".join([ch for ch in span if ch != " "]))
+                else:
+                    seq_spans.append(span.strip().lower())
 
             for span_i, seq_span in enumerate(seq_spans):
                 if span_i == len(answer_matrix[0]): break

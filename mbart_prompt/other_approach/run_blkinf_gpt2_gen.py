@@ -256,6 +256,8 @@ def main():
         with open(fn, "w", encoding="utf-8") as f:
             f.write(content)
 
+    os.makedirs(args.output_dir, exist_ok=True)
+
     answer_per_seq_str = ""
     for instance_i, generated_sequences in enumerate(batch_generated_sequences):
         answer_per_seq_str += f"[Instance {instance_i}]\n"

@@ -18,12 +18,13 @@ You might want to run the script multiple times with different --mask_n_repeat t
 For a joint evaluation upon all attempts, use ./jointly_eval.py.
 
 Example of usage:
-python <this script> --model_name_or_path m-bert --model_type bert --do_train --train_data_file train.json
+python <this script> --model_name_or_path m-bert --model_type bert --do_train --train_data_file train.json --tgt_lang zh_CN
 --output_dir output --overwrite_output_dir --overwrite_cache --learning_rate 3e-5 --num_train_epochs 5.0 --logging_steps 10
---do_eval --test_data_file test.json --nbest 5 --mask_n_repeat 1 --results_dir results.m1.n5
+--do_eval --test_data_file test.json --nbest 5 --mask_n_repeat 1 --results_dir results.m1.n5 --match_standard character
 """
 
 import logging
+import itertools
 import json
 import os
 import sys
@@ -130,6 +131,15 @@ class DataTrainingArguments:
     results_dir: str = field(
         default="results",
         metadata={"help": "Output directory to save the results. It will be generated inside output_dir."}
+    )
+    match_standard: Optional[str] = field(
+        default="character",
+        metadata={
+            "choices": ["character", "token"],
+            "help": "Standard to judge whether generated answer matches label."
+                    "Set 'character' if the target language is character-based ones like Chinese or Japanese."
+                    "Set 'token' if the target language is token-based ones like German or English."
+        }
     )
 
 
@@ -328,21 +338,39 @@ def analyze_output(output, data_args, model_args, tokenizer):
 
         instance_res = []
         for span_i, span in enumerate(answer_spans):
-            span = "".join(span.strip().split())
+            if data_args.match_standard == "character":
+                span = "".join(span.strip().split())
+            else:
+                span = span.strip()
 
             cands = instance_preds[span_i * mask_n_repeat:span_i * mask_n_repeat + mask_n_repeat]
             joined_cands_strs = []
             for blank_cand_ids in cands.T:
-                blank_cand_str = "".join(tokenizer.convert_ids_to_tokens(blank_cand_ids))
+                # blank_cand_str = "".join(tokenizer.convert_ids_to_tokens(blank_cand_ids))
+                # if model_args.model_type == "xlm-roberta":
+                #     tmp = ""
+                #     for ch in blank_cand_str:
+                #         if ch == "▁": continue
+                #         tmp += ch
+                #     blank_cand_str = tmp
+                # joined_cands_strs.append(blank_cand_str)
+                tokens = tokenizer.convert_ids_to_tokens(blank_cand_ids)
                 if model_args.model_type == "xlm-roberta":
-                    tmp = ""
-                    for ch in blank_cand_str:
-                        if ch == "▁": continue
-                        tmp += ch
-                    blank_cand_str = tmp
+                    tokens = [t.replace("_", "") for t in tokens]
+                tokens = [t for t in tokens if len(t) > 0]
+
+                if data_args.match_standard == "character":
+                    blank_cand_str = "".join(tokens)
+                else:
+                    blank_cand_str = " ".join(tokens).lower()
+
+                blank_cand_str = blank_cand_str.replace("##", "")
                 joined_cands_strs.append(blank_cand_str)
 
             instance_res.append(joined_cands_strs)
+
+            # nested_cands_strs = []    # todo support nested multi-mask candidates to figure out the true match rate
+
             total_cnt += 1
             if span in joined_cands_strs:
                 match_n_cnt += 1

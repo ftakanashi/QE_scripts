@@ -74,10 +74,10 @@ python run_mbart_prompt.py\
 \f0 \'a1\'bf
 \f2\b0 \
 python run_mlm.py\
---model_name_or_path chinese-bert --model_type bert --do_train --train_data_file data/train.json --output_dir output --overwrite_output_dir --overwrite_cache --learning_rate 3e-5 --num_train_epochs 5.0 --logging_steps 10 --save_steps 10000 --do_eval --test_data_file data/test.json --nbest 5 --mask_n_repeat 1 --results_dir results.m1.n5\
+--model_name_or_path chinese-bert --model_type bert --tgt_lang zh_CN --do_train --train_data_file data/train.json --output_dir output --overwrite_output_dir --overwrite_cache --learning_rate 3e-5 --num_train_epochs 5.0 --logging_steps 10 --save_steps 10000 --do_eval --test_data_file data/test.json --nbest 5 --mask_n_repeat 1 --results_dir results.m1.n5\
 \
 python run_mlm.py\
---model_name_or_path output --model_type bert --output_dir output --overwrite_output_dir --overwrite_cache --do_eval --test_data_file data/test.json --nbest 5 --mask_n_repeat 1 --results_dir results.m1.n5\
+--model_name_or_path output --model_type bert --tgt_lang zh_CN --output_dir output --overwrite_output_dir --overwrite_cache --do_eval --test_data_file data/test.json --nbest 5 --mask_n_repeat 1 --results_dir results.m1.n5\
 \
 
 \f0\b \'a1\'berun_blkinf_gpt2\'a1\'bf
