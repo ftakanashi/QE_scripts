@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+'''
+Same function with that of evaluation-scripts/prob2tag.py
+'''
+
 import argparse
 
 def parse_args():

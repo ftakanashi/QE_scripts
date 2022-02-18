@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 """
 For BERT/XLM-R architectures, we don't know in advance how many masks will correspond to a blank.
 So we simply try out all possibilities, for example, transferring one blank into 1/2/3 masks and do prediction.

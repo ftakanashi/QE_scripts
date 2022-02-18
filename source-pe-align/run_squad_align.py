@@ -1,19 +1,19 @@
-# coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
-# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-""" Finetuning the library models for question-answering on SQuAD (DistilBERT, Bert, XLM, XLNet)."""
+#!/usr/bin/env python
+
+'''
+This script is for fine-tuning a *BERT model in SQuAD manner, which is used for word-level alignment extraction.
+I recommend you to refer to SpanAlign (https://github.com/nttcslab-nlp/word_align) which might be a better developed
+toolkit which follows the same principle.
+
+Input should be a JSON file that fits with format of SQuAD data.
+You can generate such format by executing ../source-mt-align/build_squad_with_tag.py
+
+Example of usage:
+python <this script> --model_type bert --model_name_or_path m-bert --version_2_with_negative
+--output_dir output --cache_dir output --do_train --train_file train.json --do_eval --predict_file test.json
+--learning_rate 3e-5 --num_train_epoch 2.0 --save_steps 1000 --logging_steps 1000 --max_query_length 160
+--max_answer_length 15 --overwrite_output_dir --overwrite_cache
+'''
 
 import argparse
 import collections

@@ -1,12 +1,20 @@
-# coding=utf-8
+#!/usr/bin/env python
+
+# !!! WARN !!!
+# Current version do not support running on multi-GPU.
 
 """
-Modified from transformers-v3.3.1 run_language_modeling.py
-The script accepts blanked input & answer sequence and trains model for CLM.
+modified from transformers-v3.3.1 run_language_modeling.py
 
-python <THIS SCRIPT> --model_name_or_path gpt2-chinese --model_type gpt2 --do_train --train_data_file train.json
+This script takes a multi-line JSON file as input (../build_data.py can generate such format).
+It then trains a GPT-2 for CLM with input like below:
+Input Sequence: <s> a blanked MT with [BLANK] </s> answer sequence [ANSWER] </s>
+
+Note that this script is ONLY for training GPT-2.
+For code for testing and evaluation, refer to ./run_blkinf_gpt2_gen.py
+
+python <this script> --model_name_or_path gpt2-chinese --model_type gpt2 --do_train --train_data_file train.json
 --output_dir output --overwrite_output_dir --overwrite_cache --learning_rate 3e-5 --num_train_epochs 5.0 --logging_steps 10
---do_eval --test_data_file test.json --nbest 5 --mask_n_repeat 1 --results_dir results.m1.n5
 """
 
 import logging
@@ -73,10 +81,10 @@ class DataTrainingArguments:
     train_data_file: Optional[str] = field(
         default=None, metadata={"help": "The input training data file (a already masked file)."}
     )
-    test_data_file: Optional[str] = field(
-        default=None,
-        metadata={"help": "The input testing data file."},
-    )
+    # test_data_file: Optional[str] = field(
+    #     default=None,
+    #     metadata={"help": "The input testing data file."},
+    # )
     src_lang: Optional[str] = field(
         default="en_XX",
         metadata={"help": "Source language code."}
@@ -107,19 +115,6 @@ class DataTrainingArguments:
         metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
 
-    nbest: int = field(
-        default=5,
-        metadata={"help": "output Top N candidates while predicting."}
-    )
-    mask_n_repeat: int = field(
-        default=1,
-        metadata={"help": "Number of MASK token inserted for one blank during testing."}
-    )
-    results_dir: str = field(
-        default="results",
-        metadata={"help": "Output directory to save the results. It will be generated inside output_dir."}
-    )
-
 
 def get_dataset(
         data_args: DataTrainingArguments,
@@ -127,7 +122,8 @@ def get_dataset(
         tokenizer: PreTrainedTokenizer,
         evaluate: bool = False,
 ):
-    file_path = data_args.test_data_file if evaluate else data_args.train_data_file
+    # file_path = data_args.test_data_file if evaluate else data_args.train_data_file
+    file_path = data_args.train_data_file
     short_src_lang = data_args.src_lang.split("_")[0]
     short_tgt_lang = data_args.tgt_lang.split("_")[0]
     return AlreadyMaskedLineDatasetForCLM(
@@ -142,19 +138,12 @@ def get_dataset(
         answer_token_in_data=data_args.answer_token,
         blank_token_for_model=BLANK_TOKEN,
         answer_token_for_model=ANSWER_TOKEN,
-        mask_n_repeat=data_args.mask_n_repeat
     )
 
 def main():
 
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
-
-    if data_args.test_data_file is None and training_args.do_eval:
-        raise ValueError(
-            "Cannot do evaluation without an evaluation data file. Either supply a file to --test_data_file "
-            "or remove the --do_eval argument."
-        )
 
     if (
             os.path.exists(training_args.output_dir)
@@ -236,9 +225,9 @@ def main():
     train_dataset = (
         get_dataset(data_args, model_args, tokenizer=tokenizer) if training_args.do_train else None
     )
-    test_dataset = (
-        get_dataset(data_args, model_args, tokenizer=tokenizer, evaluate=True) if training_args.do_eval else None
-    )
+    # test_dataset = (
+    #     get_dataset(data_args, model_args, tokenizer=tokenizer, evaluate=True) if training_args.do_eval else None
+    # )
 
     data_collator = DataCollatorForBlankInfilling(tokenizer=tokenizer)
 
@@ -249,7 +238,7 @@ def main():
         args=training_args,
         data_collator=data_collator,
         train_dataset=train_dataset,
-        eval_dataset=test_dataset,
+        eval_dataset=None,
         prediction_loss_only=True,
     )
 

@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-# -*- coding:utf-8 -*-
+
+'''
+This script can transfer probabilities to OK/BAD tags according to specified threshold.
+
+In this toolkit, probabilities can be automatically transferred to OK/BAD tags within the training script.
+This script is only a reserved tool.
+'''
 
 import argparse
 from pathlib import Path

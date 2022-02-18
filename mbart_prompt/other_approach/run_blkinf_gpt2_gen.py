@@ -1,9 +1,21 @@
 #!/usr/bin/env python
-# coding=utf-8
+
+# !!! WARN !!!
+# Current version do not support running on multi-GPU.
 
 """
-Modified from transformers-v3.3.1 run_generation.py
-Usage:
+modified from transformers-v3.3.1 run_generation.py
+
+This script takes a multi-line JSON file as input (../build_data.py can generate such format).
+After auto-regressively reading in an input sequence like below:
+Input Sequence: <s> a blanked MT with [BLANK] </s>
+the trained model of GPT-2 is asked to auto-regressively generate an output sequence like below:
+Output Sequence: answer sequence [ANSWER] </s>
+
+Then the script will calculate the top-1 match rate and top-n match rate for each blank.
+The results are output to --output_dir.
+
+Example of usage:
 python <this script> --model_name_or_path gpt2-chinese --model_type gpt2
 --test_data_file test.json --output_dir output --length 64 --stop_token [SEP]
 --num_return_sequences 10
@@ -213,6 +225,7 @@ def main():
             do_sample=True,
             num_beams=args.num_beams,
             num_return_sequences=args.num_return_sequences,
+            pad_token_id=tokenizer.pad_token_id,
         )
 
         # Remove the batch dimension when returning multiple sequences

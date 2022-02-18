@@ -1,10 +1,24 @@
-# coding=utf-8
+#!/usr/bin/env python
 
 """
-Modified from transformers-v3.3.1 run_language_modeling.py
-The script runs MLM only and accept already masked data as input.
+modified from transformers-v3.3.1 run_language_modeling.py
 
-python run_mlm.py --model_name_or_path m-bert --model_type bert --do_train --train_data_file train.json
+This script takes a multi-line JSON file as input (../build_data.py can generate such format).
+It then transforms blanks in the input as masks and runs MLM to unmask those masks like below:
+Input Sequence: <s> source sentence </s> </s> blanked MT with [MASK] </s>
+Output Sequence: <s> source sentence </s> </s> blanked MT with unmasked </s>
+
+Note that source sentence is optional and can be removed if --with_src is not set.
+
+Another noteworthy thing is that how many masks should be placed for one blank.
+During training, as we know the ground truth of the blank, we simply replace the blank with correct number
+of masks as the ground truth.
+During testing, --mask_n_repeat determines a global value that all blanks should be replaced with that number of masks.
+You might want to run the script multiple times with different --mask_n_repeat to fetch answer as correct as possible.
+For a joint evaluation upon all attempts, use ./jointly_eval.py.
+
+Example of usage:
+python <this script> --model_name_or_path m-bert --model_type bert --do_train --train_data_file train.json
 --output_dir output --overwrite_output_dir --overwrite_cache --learning_rate 3e-5 --num_train_epochs 5.0 --logging_steps 10
 --do_eval --test_data_file test.json --nbest 5 --mask_n_repeat 1 --results_dir results.m1.n5
 """

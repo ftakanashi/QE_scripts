@@ -3,15 +3,17 @@
 
 NOTE = \
 '''
-    Since the workflow of using fast_align to do alignment is complicated, this script consolidates all the steps of
-    that.
-    Specifically, it runs the following commands:
-    paste src tgt | awk -F '\t' '{print $1 " ||| " $2}' > src-tgt
-    fast_align -i src-tgt -d -o -v > forward.align
-    fast_align -i src-tgt -d -o -v -r > reverse.align
-    atools -i forward.align -j reverse.align -c grow-diag-final-and > output
+Since the workflow of using fast_align to do alignment is complicated, this script consolidates all the steps of that.
 
-    All the intermediate files are generated and saved in tmp_working_dir  
+Specifically, it runs the following commands in order:
+```
+paste src tgt | awk -F '\t' '{print $1 " ||| " $2}' > src-tgt
+fast_align -i src-tgt -d -o -v > forward.align
+fast_align -i src-tgt -d -o -v -r > reverse.align
+atools -i forward.align -j reverse.align -c grow-diag-final-and > output
+```
+
+All the intermediate files are generated and saved in tmp_working_dir. 
 '''
 
 import argparse

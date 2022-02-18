@@ -1,5 +1,11 @@
 #!/usr/bin/env python
-# -*- coding:utf-8 -*-
+
+'''
+This script takes a word tag file (.mtword_tags) and a gap tag file (.gap_tags),
+and outputs a merged MT tag file (.tags).
+
+For each line, if number of MT word tags is N, then there should be N+1 corresponding gap tags.
+'''
 
 import argparse
 from pathlib import Path

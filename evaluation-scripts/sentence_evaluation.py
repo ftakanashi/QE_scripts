@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 
 '''
-    A script used to evalueate HTER score's prediction.
+A script used to evalueate HTER score's prediction.
 '''
 
 import argparse

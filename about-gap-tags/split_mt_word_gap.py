@@ -1,6 +1,13 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
+'''
+This script takes a merged MT tag file (.tags) and split it into
+MT word tag file (.mtword_tags) and MT gap tag file (.gap_tags).
+
+Such function is the reversed operation of ./merge_mt_word_gap.py
+'''
+
 import argparse
 
 from pathlib import Path

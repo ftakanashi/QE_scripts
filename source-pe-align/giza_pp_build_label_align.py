@@ -2,22 +2,26 @@
 # -*- coding:utf-8 -*-
 
 '''
-    Since the workflow for word alignment extraction by GIZA++ is complicated, this script consolidates all the steps of that workflow.
-    Specifically, the following commands are executed:
-    cp SRC_PATH src.txt; cp TGT_PATH tgt.txt
-    plain2snt src.txt tgt.txt
-    snt2cooc src.vcb tgt.vcb src_tgt.snt > src_tgt.cooc
-    snt2cooc tgt.vcb src.vcb tgt_src.snt > tgt_src.cooc
-    mkcls -psrc.txt -Vsrc.vcb.classes opt
-    mkcls -ptgt.txt -Vtgt.vcb.classes opt
-    GIZA++ -S src.vcb -T tgt.vcb -C src_tgt.snt -CoocurrenceFile src_tgt.cooc -o src2tgt -OutputPath src2tgt_dir
-    GIZA++ -S tgt.vcb -T src.vcb -C tgt_src.snt -CoocurrenceFile tgt_src.cooc -o tgt2src -OutputPath tgt2src_dir
+Since the workflow for word alignment extraction by GIZA++ is complicated, this script consolidates all the steps of that workflow.
+Specifically, the following commands are executedin order:
 
-    Then, the A3.final files will be transferred into standard format of alignment files. (function
-    a3final_to_align_lines)
+```
+cp SRC_PATH src.txt; cp TGT_PATH tgt.txt
+plain2snt src.txt tgt.txt
+snt2cooc src.vcb tgt.vcb src_tgt.snt > src_tgt.cooc
+snt2cooc tgt.vcb src.vcb tgt_src.snt > tgt_src.cooc
+mkcls -psrc.txt -Vsrc.vcb.classes opt
+mkcls -ptgt.txt -Vtgt.vcb.classes opt
+GIZA++ -S src.vcb -T tgt.vcb -C src_tgt.snt -CoocurrenceFile src_tgt.cooc -o src2tgt -OutputPath src2tgt_dir
+GIZA++ -S tgt.vcb -T src.vcb -C tgt_src.snt -CoocurrenceFile tgt_src.cooc -o tgt2src -OutputPath tgt2src_dir
+```
 
-    atools from fast_align will do the symmetrization work.
-    atools -i forward.align -j reverse.align -c grow-diag-final-and > OUTPUT
+Then, the A3.final files will be transferred into standard format of alignment files. (function a3final_to_align_lines)
+
+```
+atools from fast_align will do the symmetrization work.
+atools -i forward.align -j reverse.align -c grow-diag-final-and > OUTPUT
+```
 '''
 
 import argparse

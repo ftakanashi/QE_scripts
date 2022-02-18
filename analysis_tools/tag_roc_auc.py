@@ -1,5 +1,22 @@
 #!/usr/bin/env python
 
+'''
+This script performs significant test and draw ROC curve along with AUC value by
+reading in labels and predictions from different models of Source tags and MT Word tags.
+
+The structure of --directory should be like：
+├── MTWord    # [fixed name] Directory for probability files of MT word tags of different systems
+│   ├── baseline.prob    # prob files must ends with .prob
+│   ├── model1.prob
+│   └── model2.prob
+├── Source    # [fixed name] Directory for probability files of source tags of different systems
+│   ├── baseline.prob    # prob files must ends with .prob
+│   ├── model1.prob
+│   └── model2.prob
+├── test.mtword_tags    # [fixed name] Labels of MT word tags
+└── test.source_tags    # [fixed name] Labels of source tags
+'''
+
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np

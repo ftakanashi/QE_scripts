@@ -3,18 +3,14 @@
 
 NOTE = \
 '''
-    This script is designed for extraction of alignment predictions (and tag predictions if needed) from a 
-    predictions_.json file produced by run_squad_align_with_tag.py.
-    
-    Only when -sto and -tto are given, tag predictions will be extracted. Otherwise, only alignment predictions will 
-    be generated.
-    
-    Usage:
-    python pred_to_align_with_tag.py
-    -p predictions_.json
-    -ao pred.align
-    -sto pred.source_tags
-    -tto pred.mtword_tags  
+This script is designed for extraction of alignment predictions (and tag predictions if needed) from a 
+predictions_.json file produced by run_squad_align_with_tag.py.
+
+Only when -sto and -tto are given, tag predictions will be extracted. Otherwise, only alignment predictions will 
+be generated.
+
+Example of usage:
+python pred_to_align_with_tag.py -p predictions_.json -ao pred.align -sto pred.source_tags -tto pred.mtword_tags  
 '''
 
 import argparse

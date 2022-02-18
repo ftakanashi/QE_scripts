@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 
+'''
+Alignment data output by AWESoME is not sorted.
+Re-sort those alignment data in lines.
+'''
+
 import argparse
 
 def parse_args():

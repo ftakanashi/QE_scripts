@@ -2,14 +2,14 @@
 # -*- coding:utf-8 -*-
 
 NOTE = \
-    '''
-        For word alignment purpose.
-        Given a nbest_predictions_.json produced by run_squad_huggingface_bert.py
-        Output a .lp file for every sentence pair which will be passed to CPLEX to do optimization by adopting integer 
-        linear programming.
-        The default subject is that in both s2t or t2s direction, each word can only be assigned to an aligned word or 
-        null(which means aligns to no word) ONCE.
-    '''
+'''
+For word alignment purpose.
+Given a nbest_predictions_.json produced by run_squad.py
+Output a .lp file for every sentence pair which will be passed to CPLEX to do optimization by adopting integer 
+linear programming.
+The default subject is that in both s2t or t2s direction, each word can only be assigned to an aligned word or 
+null(which means aligns to no word) ONCE.
+'''
 
 import argparse
 import collections

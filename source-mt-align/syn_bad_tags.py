@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
-NOTE = \
+# !!! THIS SCRIPT IS STILL UNDER DEVELOPING !!!
+
 '''
-    modify some OK tags into BAD according to alignment.
-    note that original words in target will also be modified.
-    THIS SCRIPT IS STILL UNDER DEVELOPING.
+modify some OK tags into BAD according to alignment.
+note that original words in target will also be modified.
 '''
 
 import argparse

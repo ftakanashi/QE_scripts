@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 
+'''
+Evaluation script for prediction of alignment.
+Example of usage:
+python <this script> reference.align prediction.align
+'''
+
 import argparse
 import itertools
 from collections import Counter

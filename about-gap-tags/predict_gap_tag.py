@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-# -*- coding:utf-8 -*-
+
 NOTE = \
 '''
-    A script designed for predicting the GAP QE Tags based on existing source word tags and MT word tags and the 
-    pseudo alignments.
-    NOTE. source corpus and MT corpus files technically are not needed in the program, but I added them for a simple 
-    token-matching check by which you can assure that you are using the correct file.
+A script designed for predicting the GAP QE Tags based on existing source word tags and MT word tags and the 
+pseudo alignments.
+NOTE. source corpus and MT corpus files technically are not needed in the program, but I added them for a simple 
+token-matching check by which you can assure that you are using the correct file.
 '''
 
 import argparse

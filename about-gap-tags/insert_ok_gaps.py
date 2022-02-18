@@ -1,9 +1,8 @@
 #!/usr/bin/env python
-# -*- coding:utf-8 -*-
 
-NOTE = '''
-    This script takes a MT word tag file as an input.
-    Then insert [OK] into all gaps between the word tags as MT gap tags.
+'''
+This script takes a MT word tag file as an input.
+Then insert OK into all gaps between the word tags as MT gap tags.
 '''
 
 import argparse

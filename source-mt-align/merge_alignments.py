@@ -3,8 +3,8 @@
 
 NOTE = \
 '''
-    Merge the source-pe alignments with pe-mt alignments.
-    Generate a source-mt alignment file.
+Merge the source-pe alignments with pe-mt alignments.
+Generate a source-mt alignment file.
 '''
 
 import argparse

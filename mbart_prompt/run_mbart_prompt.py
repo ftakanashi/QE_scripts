@@ -1,14 +1,24 @@
 #!/usr/bin/env python
 
 """
-This script is modified from transformers-v4.12.4/examples/translation/run_translation.py
-Usage:
+modified from transformers-v4.12.4/examples/translation/run_translation.py
+
+This script takes a multi-line JSON file as input (./build_data.py can generate such format).
+It trains multilingual BART in the way below:
+INPUT for encoder: <s> A source sentence </s> <src_lang> A blanked MT [BLANK] </s> <tgt_lang>
+OUTPUT for decoder: <tgt_lang> answer sequence [ANSWER]
+
+If --do_eval is specified, the script will calculate and show the top-1 match rate and top-k match rate under
+multi-beam generation.
+The results are output to --results_dir.
+Be sure to specify --predict_with_generate along with --do_eval.
+
+Example of usage:
 python <this script> --model_name_or_path mbart-large-cc25 --source_lang en_XX --target_lang zh_CN
 --do_train --train_file train.json --learning_rate 3e-5 --per_device_train_batch_size 8 --num_train_epochs 5.0
 --output_dir output --overwrite_cache --logging_steps 10
 --do_eval --test_file test.json --predict_with_generate
 """
-# You can also adapt this script on your own sequence to sequence task. Pointers for this are left as comments.
 
 import datetime
 import json

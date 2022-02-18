@@ -1,8 +1,12 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
+# !!! DEPRECATED !!!
+# Please use ../source-mt-align/build_squad_with_tag.py instead.
+# If you don't want involve tags in data, just run that script without --with_tag.
+
 '''
-Nagata san's paper: https://arxiv.org/pdf/2004.14516.pdf
+Nagata's paper: https://arxiv.org/pdf/2004.14516.pdf
 Input:
   - source corpus
   - target corpus

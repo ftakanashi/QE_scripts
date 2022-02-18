@@ -1,5 +1,16 @@
 #!/usr/bin/env python
 
+'''
+Build pseudo data file which is similar to the output of ./build_data.py
+This script reads in a parallel corpus and intentionally blanks out some target words to simulate a blanked MT
+with a certain probability.
+Continuous blanks are merged to make the data looks more natural.
+
+Output file is a multi-line JSON. Each line is like:
+{"translation": {"en": "A source sentence", "zh_blank": "A pseudo blanked MT [BLANK]",
+"zh": "the answer sequence [ANSWER]"}}
+'''
+
 import argparse
 import json
 import random

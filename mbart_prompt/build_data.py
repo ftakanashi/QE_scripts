@@ -1,7 +1,16 @@
 #!/usr/bin/env python
-"""
-    Build data file for run_mbart_prompt.py
 
+"""
+Build data file for run_mbart_prompt.py
+The script firstly reads in refined MT tags and identifies REP-tagged MT words and INS-tagged MT gaps.
+For MT words, we refer PE-MT alignments, for MT gaps, we refer to SRC-MT & SRC-GAP alignments
+to determine where the blank should be placed in MT.
+Continuous blanks are basically merged to make the data looks more natural.
+BUT there are still some cases that continuous blanks cannot be merged due to some bugs.
+
+Output file is a multi-line JSON. Each line is like:
+{"translation": {"en": "A source sentence", "zh_blank": "A blanked MT [BLANK]",
+"zh": "the answer sequence [ANSWER]"}}
 """
 
 import argparse
@@ -25,7 +34,7 @@ def parse_args():
     parser.add_argument("--target_lang", type=str, default="zh_CN",
                         help="Target language code for mBART. Default: zh_CN")
     parser.add_argument('--ignore_zero_blank', action='store_true', default=False,
-                        help='Set this flag to ignore the samples without any blanks.')
+                        help='Set this flag to ignore the samples without any blanks. Namely all MT tags are OK.')
     
     args = parser.parse_args()
     return args
@@ -137,6 +146,7 @@ def main():
     mt_pe_aligns = parse_align_lines(read_fn("pe-mt.align"), reverse=True)
     gap_src_aligns = parse_align_lines(read_fn("src-gap.align"), reverse=True)
 
+    # simple sanity check
     std_len = len(src_lines)
     for lines in (mt_lines, pe_lines, mt_tags, src_pe_aligns, mt_pe_aligns, gap_src_aligns):
         assert len(lines) == std_len, f"Line number does not match."

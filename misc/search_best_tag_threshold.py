@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 
-NOTE = \
-    '''
-        This script helps you to search the best threshold discriminating OK/BAD tags.
-        You need a *.prob file in which every item is a probability of corresponding word to be BAD.
-        You also need a label file.
-        
-        Usage is like:
-        python search_best_tag_threshold.py -r xxx/test -p xxx/pred --min_ths 0.0 --max_ths 1.0 --stride 0.01
-        --verbose
-    '''
+'''
+This script helps you to search the best threshold discriminating OK/BAD tags.
+Here, best simply means a biggest sum of Source MCC and MT MCC.
+You need a *.prob file in which every item is a probability of corresponding word to be BAD.
+You also need a label file.
+
+Example of usage:
+python search_best_tag_threshold.py -r xxx/test -p xxx/pred --min_ths 0.0 --max_ths 1.0 --stride 0.01
+--verbose
+'''
 
 import argparse
 import datetime

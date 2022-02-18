@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
 '''
-    Reverse the alignments.
+Reverse the alignments.
+Transfer all alignments from a-b to b-a.
 '''
 
 import collections

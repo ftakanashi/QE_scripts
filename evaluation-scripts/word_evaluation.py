@@ -1,5 +1,19 @@
 #!/usr/bin/env python
 
+'''
+This script can evaluate tags with predictions and labels are input.
+Only prefixes of labels and predictions is needed.
+
+There are two modes here.
+"original" is for OK/BAD tags. It is also the default value of --mode.
+"fine_grained" is for OK/REP/INS/DEL refined tags.
+
+Suffixes including source_tags/mtword_tags/gap_tags/tags will be checked.
+
+Example of usage:
+python <this script> -r data/test/test.refine -p output/testing/pred.refine -m fine_grained
+'''
+
 import argparse
 import os
 

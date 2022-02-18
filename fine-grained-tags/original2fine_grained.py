@@ -2,11 +2,11 @@
 # -*- coding:utf-8 -*-
 
 '''
-    Transform original OK/BAD word tags into fine-grained OK/REP/INS/DEL
-    source_tags, mtword_tags and alignments are needed.
+Transform original OK/BAD word tags into fine-grained OK/REP/INS/DEL according to SRC-MT alignment.
+source_tags, mtword_tags and alignments are needed.
 
-    --remove-mismatch-align   add this flag to remove the alignments with mismatch (OK-BAD) then generate a modified
-    alignment file.
+--remove-mismatch-align   add this flag to remove the alignments with mismatch (OK-BAD) then generate a modified
+alignment file.
 '''
 
 import argparse

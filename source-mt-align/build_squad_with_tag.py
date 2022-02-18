@@ -3,22 +3,21 @@
 
 NOTE = \
 ''' 
-    This script takes source/target corpus (optionally, alignment and source/target tags as well) as input.
-    A SQuAD v2.0 format JSON file will be generated based on the provided files. Such a file is used to fine-tune a 
-    *BERT model to do word alignment mimicking QA task in BERT settings.
-    
-    If -a is not set, answers in JSON will be empty.
-    If tags are not set, tag field (if exists, controlled by the flag --with_tags) will be empty.
-    
-    Usage:
-    
-    (building train_file) python build_squad_with_tag.py 
-    -s train.src -t train.mt -o src_mt_train.for_train.json 
-    -a src_mt_train.fast_align.align --with_tags --src_tags train.source_tags --tgt_tags train.tags
-    
-    (building predict_file) python build_squad_with_tag.py 
-    -s dev.src -t dev.mt -o src_mt_dev.for_pred.json 
-    --with_tags
+This script takes source/target corpus (optionally, alignment and source/target tags as well) as input.
+A SQuAD v2.0 format JSON file will be generated based on the provided files. Such a file is used to fine-tune a 
+*BERT model to do word alignment mimicking QA task in BERT settings.
+
+If -a is not set, answers in JSON will be empty.
+If tags are not set, tag field (if exists, controlled by the flag --with_tags) will be empty.
+
+Example of usage:
+(building train_file)
+python build_squad_with_tag.py 
+-s train.src -t train.mt -o src_mt_train.for_train.json 
+-a src_mt_train.fast_align.align --with_tags --src_tags train.source_tags --tgt_tags train.tags
+
+(building predict_file)
+python build_squad_with_tag.py -s dev.src -t dev.mt -o src_mt_dev.for_pred.json --with_tags
 '''
 
 import argparse

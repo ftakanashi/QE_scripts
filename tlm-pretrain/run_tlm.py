@@ -2,8 +2,10 @@
 # -*- coding:utf-8 -*-
 
 '''
-This script is modified based no the blueprint of
-huggingface/transformers-3.3.1: run_language_modeling.py
+modified from transformers-v3.3.1 run_language_modeling.py
+
+This script takes a parallel source-target corpus as input.
+It then randomly blanks out some tokens
 
 Example of usage:
 python run_tlm.py --model_name_or_path xlm-roberta --model_type xlm-roberta
