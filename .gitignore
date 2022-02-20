@@ -13,3 +13,4 @@ source-pe-align/tmp*
 tmp*
 runs
 .DS_Store
+*__pycache__

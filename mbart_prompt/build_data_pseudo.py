@@ -15,6 +15,8 @@ import argparse
 import json
 import random
 
+from tqdm import tqdm
+
 def parse_args():
     parser = argparse.ArgumentParser()
 
@@ -54,7 +56,7 @@ def main():
     src_lang = args.source_lang.split("_")[0]
     tgt_lang = args.target_lang.split("_")[0]
     all_line_res = []
-    for src_line, tgt_line in zip(src_lines, tgt_lines):
+    for src_line, tgt_line in tqdm(zip(src_lines, tgt_lines), mininterval=1.0, desc="Processing..."):
 
         tgt_tokens = tgt_line.strip().split()
 
@@ -64,7 +66,7 @@ def main():
             if random.random() < args.blank_prob:    # do blanking
                 if not blanked_tokens or blanked_tokens[-1] != args.blank_token:
                     blanked_tokens.append(args.blank_token)
-                else:    # continuous blank
+                elif len(answer_tokens) > 0:    # continuous blank
                     answer_tokens.pop()
                 answer_tokens.append(tgt_tokens[i])
                 answer_tokens.append(args.answer_token)
