@@ -225,6 +225,13 @@ def main():
             "and load it from here, using --tokenizer_name"
         )
 
+    blank_token, answer_token = data_args.blank_token, data_args.answer_token
+    vocab = tokenizer.get_vocab()
+    assert  blank_token in vocab and answer_token in vocab, \
+        f"Please manually replace some UNUSED tokens with {blank_token} and {answer_token} or use already included tokens."
+    del vocab
+    tokenizer.add_tokens([blank_token, answer_token], special_tokens=True)
+
     if model_args.model_name_or_path:
         if model_args.model_type == "xlm-roberta":
             model = MyXLMRobertaForMaskedLM.from_pretrained(
