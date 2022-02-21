@@ -48,8 +48,8 @@ logger = logging.getLogger(__name__)
 MODEL_CONFIG_CLASSES = list(MODEL_WITH_LM_HEAD_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
-BLANK_TOKEN = "[BLK]"
-ANSWER_TOKEN = "[ANS]"
+# BLANK_TOKEN = "[BLK]"
+# ANSWER_TOKEN = "[ANS]"
 
 @dataclass
 class ModelArguments:
@@ -93,13 +93,21 @@ class DataTrainingArguments:
         default="zh_CN",
         metadata={"help": "Target language code."}
     )
-    blank_token: Optional[str] = field(
+    blank_token_in_data: Optional[str] = field(
         default="¶",
         metadata={"help": "Specify the [blank] token used in data. Default: ¶"}
     )
-    answer_token: Optional[str] = field(
+    answer_token_in_data: Optional[str] = field(
         default="※",
         metadata={"help": "Specify the [answer] token used in data. Default: ※"}
+    )
+    blank_token_for_model: Optional[str] = field(
+        default="[BLK]",
+        metadata={"help": "Specify the [blank] token for the model. Default: [BLK]"}
+    )
+    answer_token_for_model: Optional[str] = field(
+        default="[ANS]",
+        metadata={"help": "Specify the [answer] token for the model. Default: [ANS]"}
     )
 
     block_size: int = field(
@@ -134,10 +142,10 @@ def get_dataset(
         with_src=model_args.model_type == "xlm-roberta",
         src_lang=short_src_lang,
         tgt_lang=short_tgt_lang,
-        blank_token_in_data=data_args.blank_token,
-        answer_token_in_data=data_args.answer_token,
-        blank_token_for_model=BLANK_TOKEN,
-        answer_token_for_model=ANSWER_TOKEN,
+        blank_token_in_data=data_args.blank_token_in_data,
+        answer_token_in_data=data_args.answer_token_in_data,
+        blank_token_for_model=data_args.blank_token_for_model,
+        answer_token_for_model=data_args.answer_token_for_model,
     )
 
 def main():
@@ -197,10 +205,21 @@ def main():
         )
 
     # adapt special tokens for blank infilling so that tokenizer won't split them
+    blank_token, answer_token = data_args.blank_token_for_model, data_args.answer_token_for_model
+
     vocab = tokenizer.get_vocab()
-    assert BLANK_TOKEN in vocab and ANSWER_TOKEN in vocab, f"Please manually replace some UNUSED tokens with {BLANK_TOKEN} and {ANSWER_TOKEN}"
+    assert  blank_token in vocab and answer_token in vocab, \
+        f"Please manually replace some UNUSED tokens with {blank_token} and {answer_token} or use already included tokens."
     del vocab
-    tokenizer.add_tokens([BLANK_TOKEN, ANSWER_TOKEN], special_tokens=True)
+    if data_args.tgt_lang == "de_DE":
+        tokenizer.add_special_tokens({
+            "cls_token": "<s>",
+            "sep_token": "</s>",
+            "pad_token": "<pad>",
+            "mask_token": "<mask>",
+        })
+
+    tokenizer.add_tokens([blank_token, answer_token], special_tokens=True)
 
     if model_args.model_name_or_path:
         model = AutoModelWithLMHead.from_pretrained(

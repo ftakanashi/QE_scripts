@@ -48,8 +48,8 @@ from transformers import (
     AutoTokenizer,
 )
 
-BLANK_TOKEN = "[BLK]"
-ANSWER_TOKEN = "[ANS]"
+# BLANK_TOKEN = "[BLK]"
+# ANSWER_TOKEN = "[ANS]"
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
@@ -92,13 +92,13 @@ def str_to_span(s, delimeter):
         ans.append("".join([ch for ch in span if ch != " "]))
     return ans
 
-def analyze_generated_sequences(generated_sequences, labels):
+def analyze_generated_sequences(generated_sequences, labels, args):
     cand_num = len(generated_sequences)
     blank_num = len(labels)
 
     answer_per_blank = [[None for _ in range(cand_num)] for _ in range(blank_num)]
     for seq_i, seq in enumerate(generated_sequences):
-        seq_preds = str_to_span(seq, ANSWER_TOKEN)
+        seq_preds = str_to_span(seq, args.answer_token_for_model)
         for blank_i in range(min(len(seq_preds), blank_num)):
             answer_per_blank[blank_i][seq_i] = seq_preds[blank_i]
 
@@ -130,8 +130,10 @@ def main():
     parser.add_argument("--test_data_file", type=str, required=True, help="Path to the test data file (in form of JSON).")
     parser.add_argument("--output_dir", type=str, required=True, help="Path to the output directory.")
 
-    parser.add_argument("--blank_token", type=str, default="¶", help="The special token expressing a blank in the data.")
-    parser.add_argument("--answer_token", type=str, default="※", help="The special token concatenating answer sequence.")
+    parser.add_argument("--blank_token_in_data", type=str, default="¶", help="The special token expressing a blank in the data.")
+    parser.add_argument("--answer_token_in_data", type=str, default="※", help="The special token concatenating answer sequences in the data.")
+    parser.add_argument("--blank_token_for_model", type=str, default="[BLK]", help="The special token expressing a blank for the model.")
+    parser.add_argument("--answer_token_for_model", type=str, default="[ANS]", help="The special token concatenating answer sequences for the model.")
     parser.add_argument("--src_lang", type=str, default="en_XX", help="Source language code.")
     parser.add_argument("--tgt_lang", type=str, default="zh_CN", help="Target language code.")
 
@@ -183,7 +185,21 @@ def main():
 
     # tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
-    tokenizer.add_tokens([BLANK_TOKEN, ANSWER_TOKEN], special_tokens=True)
+
+    blank_token, answer_token = args.blank_token_for_model, args.answer_token_for_model
+    vocab = tokenizer.get_vocab()
+    assert  blank_token in vocab and answer_token in vocab, \
+        f"Please manually replace some UNUSED tokens with {blank_token} and {answer_token} or use already included tokens."
+    del vocab
+    if args.tgt_lang == "de_DE":
+        tokenizer.add_special_tokens({
+            "cls_token": "<s>",
+            "sep_token": "</s>",
+            "pad_token": "<pad>",
+            "mask_token": "<mask>",
+        })
+    tokenizer.add_tokens([blank_token, answer_token], special_tokens=True)
+
     model = model_class.from_pretrained(args.model_name_or_path)
     model.to(args.device)
 
@@ -207,8 +223,8 @@ def main():
         blanked_input_tokens = blanked_input.strip().split()
         blank_cnt = 0
         for i in range(len(blanked_input_tokens)):
-            if blanked_input_tokens[i] == args.blank_token:
-                blanked_input_tokens[i] = BLANK_TOKEN    # replace all blank token in data with [BLK] which is a manually added token in GPT's vocab
+            if blanked_input_tokens[i] == args.blank_token_in_data:
+                blanked_input_tokens[i] = args.blank_token_for_model    # replace all blank token in data with that for model which is a manually added token in GPT's vocab
                 blank_cnt += 1
         blanked_input_sequence = " ".join(blanked_input_tokens)
 
@@ -232,7 +248,7 @@ def main():
         if len(output_sequences.shape) > 2:
             output_sequences.squeeze_()
 
-        labels = str_to_span(info[short_tgt_lang], args.answer_token)
+        labels = str_to_span(info[short_tgt_lang], args.answer_token_in_data)
         batch_labels.append(labels)
         total_cnt += len(labels)
 
@@ -245,7 +261,7 @@ def main():
             text = text[ans_seq_start:ans_seq_end - 1] if ans_seq_end > 0 else text[ans_seq_start:]
             generated_sequences.append(text)
 
-        match_1_cnt, match_n_cnt, answer_per_blank = analyze_generated_sequences(generated_sequences, labels)
+        match_1_cnt, match_n_cnt, answer_per_blank = analyze_generated_sequences(generated_sequences, labels, args)
         total_match_1_cnt += match_1_cnt
         total_match_n_cnt += match_n_cnt
 
@@ -263,7 +279,7 @@ def main():
         answer_per_seq_str += f"[Instance {instance_i}]\n"
         rows = []
         for seq in generated_sequences:
-            spans = str_to_span(seq, ANSWER_TOKEN)
+            spans = str_to_span(seq, args.answer_token_for_model)
             blank_num = len(batch_labels[instance_i])
             spans = spans[:blank_num]
             while len(spans) < blank_num:
