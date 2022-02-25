@@ -27,6 +27,7 @@ import logging
 import itertools
 import json
 import os
+import re
 import sys
 
 from dataclasses import dataclass, field
@@ -348,7 +349,7 @@ def analyze_output(output, data_args, model_args, tokenizer):
             if data_args.match_standard == "character":
                 span = "".join(span.strip().split())
             else:
-                span = span.strip()
+                span = span.strip().lower()
 
             cands = instance_preds[span_i * mask_n_repeat:span_i * mask_n_repeat + mask_n_repeat]
             joined_cands_strs = []
@@ -363,7 +364,8 @@ def analyze_output(output, data_args, model_args, tokenizer):
                 # joined_cands_strs.append(blank_cand_str)
                 tokens = tokenizer.convert_ids_to_tokens(blank_cand_ids)
                 if model_args.model_type == "xlm-roberta":
-                    tokens = [t.replace("_", "") for t in tokens]
+                    udl_tok = tokenizer.convert_ids_to_tokens([6])[0]
+                    tokens = [re.sub(f"{udl_tok}+", "", t) for t in tokens]    # adaption for XLM-R's tokenizer
                 tokens = [t for t in tokens if len(t) > 0]
 
                 if data_args.match_standard == "character":
@@ -371,7 +373,7 @@ def analyze_output(output, data_args, model_args, tokenizer):
                 else:
                     blank_cand_str = " ".join(tokens).lower()
 
-                blank_cand_str = blank_cand_str.replace("##", "")
+                blank_cand_str = re.sub(" *##", "", blank_cand_str)    # adaption for some sentencepiece-based tokenizer
                 joined_cands_strs.append(blank_cand_str)
 
             instance_res.append(joined_cands_strs)

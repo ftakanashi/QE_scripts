@@ -26,6 +26,7 @@ import argparse
 import json
 import logging
 import os
+import re
 
 import numpy as np
 import torch
@@ -85,11 +86,17 @@ def adjust_length_to_model(length, max_sequence_length):
         length = MAX_LENGTH  # avoid infinite loop
     return length
 
-def str_to_span(s, delimeter):
+def str_to_span(s, delimeter, flag="character"):
     ans = []
     for span in s.strip().split(delimeter):
         if span == "": continue
-        ans.append("".join([ch for ch in span if ch != " "]))
+        if flag == "character":
+            ans.append("".join([ch for ch in span if ch != " "]))
+        else:
+            span = span.strip().lower()
+            space_tok = "Ġ"
+            span = re.sub(f"{space_tok}", "", span)
+            ans.append(span)
     return ans
 
 def analyze_generated_sequences(generated_sequences, labels, args):
@@ -98,7 +105,7 @@ def analyze_generated_sequences(generated_sequences, labels, args):
 
     answer_per_blank = [[None for _ in range(cand_num)] for _ in range(blank_num)]
     for seq_i, seq in enumerate(generated_sequences):
-        seq_preds = str_to_span(seq, args.answer_token_for_model)
+        seq_preds = str_to_span(seq, args.answer_token_for_model, args.match_standard)
         for blank_i in range(min(len(seq_preds), blank_num)):
             answer_per_blank[blank_i][seq_i] = seq_preds[blank_i]
 
@@ -129,6 +136,7 @@ def main():
 
     parser.add_argument("--test_data_file", type=str, required=True, help="Path to the test data file (in form of JSON).")
     parser.add_argument("--output_dir", type=str, required=True, help="Path to the output directory.")
+    parser.add_argument("--results_dir", type=str, required=True, help="Path to output the final results in output_dir.")
 
     parser.add_argument("--blank_token_in_data", type=str, default="¶", help="The special token expressing a blank in the data.")
     parser.add_argument("--answer_token_in_data", type=str, default="※", help="The special token concatenating answer sequences in the data.")
@@ -166,6 +174,12 @@ def main():
 
     # 20220213 add argument
     parser.add_argument("--num_beams", type=int, default=1, help="The number of beams to do beam search.")
+
+    # 20220222 add argument
+    parser.add_argument("--match_standard", type=str, default="character", choices=["character", "token"],
+                        help="Standard to judge whether generated answer matches label."
+                             "Set 'character' if the target language is character-based ones like Chinese or Japanese."
+                             "Set 'token' if the target language is token-based ones like German or English.")
 
     args = parser.parse_args()
 
@@ -248,7 +262,7 @@ def main():
         if len(output_sequences.shape) > 2:
             output_sequences.squeeze_()
 
-        labels = str_to_span(info[short_tgt_lang], args.answer_token_in_data)
+        labels = str_to_span(info[short_tgt_lang], args.answer_token_in_data, args.match_standard)
         batch_labels.append(labels)
         total_cnt += len(labels)
 
@@ -272,14 +286,15 @@ def main():
         with open(fn, "w", encoding="utf-8") as f:
             f.write(content)
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    results_dir = os.path.join(args.output_dir, args.results_dir)
+    os.makedirs(results_dir, exist_ok=True)
 
     answer_per_seq_str = ""
     for instance_i, generated_sequences in enumerate(batch_generated_sequences):
         answer_per_seq_str += f"[Instance {instance_i}]\n"
         rows = []
         for seq in generated_sequences:
-            spans = str_to_span(seq, args.answer_token_for_model)
+            spans = str_to_span(seq, args.answer_token_for_model, args.match_standard)
             blank_num = len(batch_labels[instance_i])
             spans = spans[:blank_num]
             while len(spans) < blank_num:
@@ -287,7 +302,7 @@ def main():
             rows.append("\t".join(spans))
         answer_per_seq_str += "\n".join(rows)
         answer_per_seq_str += "\n"
-    write_fn(os.path.join(args.output_dir, "answer_per_seq.txt"), answer_per_seq_str)
+    write_fn(os.path.join(results_dir, "answer_per_seq.txt"), answer_per_seq_str)
 
     answer_per_blank_str = ""
     for instance_i, answer_per_blank in enumerate(batch_answer_per_blank):
@@ -297,11 +312,11 @@ def main():
              for answers in answer_per_blank]
         )
         answer_per_blank_str += "\n"
-    write_fn(os.path.join(args.output_dir, "answer_per_blank.txt"), answer_per_blank_str)
+    write_fn(os.path.join(results_dir, "answer_per_blank.txt"), answer_per_blank_str)
 
     match_rate_str = f"Top 1 Match: {total_match_1_cnt / total_cnt:.4f} ({total_match_1_cnt}/{total_cnt})\n" \
                      f"Top n Match: {total_match_n_cnt / total_cnt:.4f} ({total_match_n_cnt}/{total_cnt})\n"
-    write_fn(os.path.join(args.output_dir, "match_rate.txt"), match_rate_str)
+    write_fn(os.path.join(results_dir, "match_rate.txt"), match_rate_str)
 
     return batch_generated_sequences
 
