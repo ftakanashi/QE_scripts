@@ -256,6 +256,7 @@ def main():
             num_beams=args.num_beams,
             num_return_sequences=args.num_return_sequences,
             pad_token_id=tokenizer.pad_token_id,
+            early_stopping=True
         )
 
         # Remove the batch dimension when returning multiple sequences
